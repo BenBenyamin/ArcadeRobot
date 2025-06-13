@@ -44,9 +44,8 @@ On the hardware side, I fixed the delay-measurement bug and obtained reliable la
 | **UP**   | 630.07            | 53.08              | 37.80           | 18.90           |
 | **DOWN** | 586.28            | 31.99              | 35.18           | 17.59           |
 
-<video width="640" height="360" controls>
-  <source src="figures/video-1.mp4" type="video/mp4">
-</video>
+<video src = "https://github.com/user-attachments/assets/88aa5277-584a-426f-9f1a-6f123c458b8f"></video>
+
 
 ## Week 7 – 5/29 to 6/4
 
@@ -63,9 +62,7 @@ Results remained blurry. As a sanity check, I implemented a simple CV algorithm 
 
 The algorithm receives an 84×84 grayscale frame and returns `(agent_paddle_y, ai_paddle_y, ball_x, ball_y)` to an MLP-based PPO agent. The agent did not learn a winning policy.
 
-<video width="640" height="360" controls>
-  <source src="figures/output.mp4" type="video/mp4">
-</video>
+<video src = "https://github.com/user-attachments/assets/fd268322-e72d-4930-a016-ba31a3f3bc2b"></video>
 
 ## Goals / Next Steps for the Final Quarter
 
