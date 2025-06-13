@@ -1,4 +1,4 @@
-# Robot Arm Plays an Arcade Game - Spring Project Summary
+# Robot Arm Plays Arcade - Spring Project Summary
 
 Ben Benyamin
 
