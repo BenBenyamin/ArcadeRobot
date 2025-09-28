@@ -1,4 +1,5 @@
 import gymnasium as gym
+from stable_baselines3.common.vec_env import VecEnvWrapper
 from collections import deque
 from typing import Dict, Optional, Tuple
 import cv2
@@ -32,7 +33,7 @@ class IconOverlayVideoWrapper(gym.Wrapper):
         icon_xy: Tuple[int, int] = (130, 0),
         show_video: bool = True,
         window_name: str = "Pong",
-        scale: int = 8,
+        scale: int = 1,
         waitkey_ms: int = 1,
         save_video: bool = True,
         video_path: str = "video.mp4",
@@ -112,6 +113,26 @@ class IconOverlayVideoWrapper(gym.Wrapper):
         self._display_and_maybe_write(obs)
         return obs, reward, terminated, truncated, info
 
+
+    def start_recording(self, video_path: str) -> None:
+        """Starts the video recording process."""
+        self.video_path = video_path
+        self.save_video = True
+        # The _ensure_writer method will be called on the next step
+
+    def stop_recording(self) -> None:
+        """Calls the save method to finalize the video."""
+        self.save()
+        self.save_video = False
+    
+    def save(self) -> None:
+        """
+        Finishes and saves the current video file.
+        """
+        if self._writer is not None:
+            self._writer.release()
+            self._writer = None
+
     def close(self):
         try:
             if self._writer is not None:
@@ -163,7 +184,7 @@ class PongDelayInertiaWrapper(gym.Wrapper):
     """
     Adds inertia behavior to discrete actions (NO_OP, UP, DOWN) by inserting
     internal steps with previous/NO_OP actions before executing the requested
-    action. This wrapper is UI-agnostic; it does not draw or record anything.
+    action.
     """
 
     def __init__(self, env, delay_steps: int = 10):
@@ -220,5 +241,88 @@ class PongDelayInertiaWrapper(gym.Wrapper):
         return obs, total, terminated, truncated, info
 
 
+class VectorizedPongDelayInertiaWrapper(VecEnvWrapper):
 
+    def __init__(self, venv, delay_steps: int = 10):
+        super().__init__(venv)
+        self.delay_steps = int(delay_steps)
+        self.prev_actions = np.full(self.num_envs, NO_OP, dtype=np.int64)
+        self._desired_actions = None
+    
+    def reset(self,**kwargs):
 
+        obs = self.venv.reset(**kwargs)
+        self.prev_actions = np.full(self.num_envs, NO_OP, dtype=np.int64)
+        self._desired_actions = None
+
+        return obs
+    
+    def step_async(self, actions):
+        # return super().step_async(actions)
+        actions = np.asarray(actions, dtype=np.int64)
+        actions[~np.isin(actions, [NO_OP, UP, DOWN])] = NO_OP
+        self._desired_actions = actions
+        
+
+    def _run_steps(self, env_id: int, action: int, n_steps: int, total_reward: float):
+        env = self.venv.envs[env_id]
+        obs, reward, terminated, truncated, info = None, 0.0, False, False, {}
+
+        for _ in range(n_steps):
+            obs, reward, terminated, truncated, info = env.step(action)
+            total_reward += float(reward)
+
+            if terminated or truncated:
+                obs, reset_info = env.reset()
+                info["terminal_observation"] = obs
+                info["reset_info"] = reset_info
+                self.prev_actions[env_id] = NO_OP
+                return obs, total_reward, terminated, truncated, info, True
+
+        return obs, total_reward, terminated, truncated, info, False
+
+    def step_wait(self):
+        batch_obs, batch_rewards, batch_dones, batch_infos = [], [], [], []
+
+        for i in range(self.num_envs):
+            desired = self._desired_actions[i]
+            prev = self.prev_actions[i]
+            total_reward = 0.0
+            obs, info, terminated, truncated, done = None, {}, False, False, False
+
+            if desired != prev:
+                if desired == NO_OP:
+                    obs, total_reward, terminated, truncated, info, done = \
+                        self._run_steps(i, prev, self.delay_steps // 2, total_reward)
+                else:
+                    obs, total_reward, terminated, truncated, info, done = \
+                        self._run_steps(i, prev, self.delay_steps // 2, total_reward)
+                    if not done:
+                        obs, total_reward, terminated, truncated, info, done = \
+                            self._run_steps(i, NO_OP, self.delay_steps // 2, total_reward)
+
+            if not done:
+                obs, reward, terminated, truncated, info = self.venv.envs[i].step(desired)
+                total_reward += float(reward)
+
+            if terminated or truncated:
+                final_obs, reset_info = self.venv.envs[i].reset()
+                info["terminal_observation"] = obs
+                info["reset_info"] = reset_info
+                obs = final_obs
+                self.prev_actions[i] = NO_OP
+            else:
+                self.prev_actions[i] = desired
+
+            # Collect results
+            batch_obs.append(obs)
+            batch_rewards.append(total_reward)
+            batch_dones.append(terminated or truncated)
+            batch_infos.append(info)
+
+        return (
+            np.stack(batch_obs),
+            np.array(batch_rewards, dtype=np.float32),
+            np.array(batch_dones, dtype=bool),
+            batch_infos,
+        )
