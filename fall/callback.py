@@ -4,6 +4,13 @@ import numpy as np
 import torch
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.logger import TensorBoardOutputFormat
+from stable_baselines3.common.atari_wrappers import AtariWrapper
+
+import gymnasium as gym
+
+from wrapper import IconOverlayVideoWrapper
+from utils import get_icon_config
+from utils import ENV_NAME
 
 class VideoRecorderCallback(BaseCallback):
     def __init__(
@@ -11,13 +18,21 @@ class VideoRecorderCallback(BaseCallback):
         record_freq: int,
         video_path: str,
         fps : int = 60,
-        verbose: int = 1
+        verbose: int = 1,
     ):
         super().__init__(verbose)
         self.record_freq = record_freq
         self.video_path = video_path
         self.fps = fps
         os.makedirs(self.video_path, exist_ok=True)
+
+        self.video_env = IconOverlayVideoWrapper(
+            AtariWrapper(gym.make(ENV_NAME)),
+            icon_config=get_icon_config(),
+            show_video=False,
+            save_video=False
+        )
+        self.video_env.reset()
 
     def _on_step(self) -> bool:
         if self.n_calls % self.record_freq != 0: return True
@@ -30,15 +45,20 @@ class VideoRecorderCallback(BaseCallback):
         
 
         # 3. Run a full episode with the current model
-        obs = self.training_env.reset()
-        self.training_env.env_method("start_recording", video_filename)
+        reset_out = self.video_env.reset()
+        if isinstance(reset_out, tuple):
+            obs, _ = reset_out   # Gymnasium: (obs, info)
+        else:
+            obs = reset_out      # VecEnv: obs only
+        self.video_env.start_recording(video_filename)
         done = False
         while not done:
             action, _ = self.model.predict(obs, deterministic=True)
-            obs, rewards, done, infos = self.training_env.step(action)
+            obs, reward, terminated, truncated, info = self.video_env.step(action)
+            done = terminated or truncated
 
         # 4. Close the environment. Your wrapper saves the file on close.
-        self.training_env.env_method("stop_recording")
+        self.video_env.stop_recording()
         self.logger.info(f"Video saved to {video_filename}")
 
         # 5. Log the saved video file to TensorBoard
@@ -64,7 +84,7 @@ class VideoRecorderCallback(BaseCallback):
                     "trajectory/agent_video",
                     frames_tensor,
                     global_step=self.num_timesteps,
-                    fps=60
+                    fps=self.fps
                 )
                 self.logger.info("Successfully logged video to TensorBoard.")
             else:
