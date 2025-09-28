@@ -10,7 +10,7 @@ import gymnasium as gym
 
 from wrapper import IconOverlayVideoWrapper
 from utils import get_icon_config
-from utils import ENV_NAME
+from utils import ENV_NAME , NO_OP , UP , DOWN
 
 class VideoRecorderCallback(BaseCallback):
     def __init__(
@@ -26,13 +26,15 @@ class VideoRecorderCallback(BaseCallback):
         self.fps = fps
         os.makedirs(self.video_path, exist_ok=True)
 
+        self.env = AtariWrapper(gym.make(ENV_NAME))
         self.video_env = IconOverlayVideoWrapper(
-            AtariWrapper(gym.make(ENV_NAME)),
+            gym.make(ENV_NAME),
             icon_config=get_icon_config(),
             show_video=False,
             save_video=False
         )
-        self.video_env.reset()
+        self.video_env.reset(seed = 0)
+        self.env.reset(seed = 0)
 
     def _on_step(self) -> bool:
         if self.n_calls % self.record_freq != 0: return True
@@ -45,7 +47,7 @@ class VideoRecorderCallback(BaseCallback):
         
 
         # 3. Run a full episode with the current model
-        reset_out = self.video_env.reset()
+        reset_out = self.env.reset(seed = 0)
         if isinstance(reset_out, tuple):
             obs, _ = reset_out   # Gymnasium: (obs, info)
         else:
@@ -54,7 +56,10 @@ class VideoRecorderCallback(BaseCallback):
         done = False
         while not done:
             action, _ = self.model.predict(obs, deterministic=True)
-            obs, reward, terminated, truncated, info = self.video_env.step(action)
+            if action not in [NO_OP,UP,DOWN]:
+                action = NO_OP
+            obs, reward, terminated, truncated, info = self.env.step(action)
+            self.video_env.step(action)
             done = terminated or truncated
 
         # 4. Close the environment. Your wrapper saves the file on close.

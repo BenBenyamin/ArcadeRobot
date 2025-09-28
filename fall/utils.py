@@ -4,7 +4,10 @@ import cv2
 import gymnasium as gym
 import numpy as np
 import ale_py
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple,Union
+import sys
+from stable_baselines3.common.env_util import make_atari_env
+
 
 # ---- Register ALE envs (needed in some setups) ----
 gym.register_envs(ale_py)
@@ -16,53 +19,20 @@ DOWN = 5
 
 ENV_NAME = "PongNoFrameskip-v4"
 
-def make_pong_env(
-    video_wrapper:gym.Wrapper, 
-    delay_wrapper:gym.Wrapper,
-    delay_steps: int = 20,
-    train: bool = True,  # when True, don't spawn ALE SDL window; we show via OpenCV
-    show_video: bool = True,
-    save_video: bool = True,
-    video_path: str = "video.mp4",
-    video_fps: int = 30,
-    icon_xy: Tuple[int, int] = (130, 0),
-    scale: int = 8,
-    waitkey_ms: int = 1,
-):
-    """
-    Build an environment with:
-      base ALE → IconOverlayVideoWrapper → PongDelayInertiaWrapper
-    This order ensures the overlay/recorder sees all internal steps.
-    """
+def get_icon_config():
+
     # Resolve icon paths (adjust this to your layout)
-    icon_dir = os.path.join(os.getcwd(), "icon")
+    if "ipykernel" in sys.modules:
+        script_dir = os.getcwd()
+    else:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+    icon_dir = os.path.join(script_dir, "icon")
     icon_config = {
         NO_OP: (os.path.join(icon_dir, "NO_OP.png"), 18),
         UP:    (os.path.join(icon_dir, "UP.png"),    24),
         DOWN:  (os.path.join(icon_dir, "DOWN.png"),  24),
     }
-
-    def _init():
-        base = gym.make(ENV_NAME, render_mode=None if train else "human")
-        base = video_wrapper(
-            base,
-            icon_config=icon_config,
-            icon_xy=icon_xy,
-            show_video=show_video,
-            window_name="Pong",
-            scale=scale,
-            waitkey_ms=waitkey_ms,
-            save_video=save_video,
-            video_path=video_path,
-            video_fps=video_fps,
-            video_codec="mp4v",
-            overlay_on_reset=True,
-            reset_action_for_overlay=NO_OP,
-        )
-        env = delay_wrapper(base, delay_steps=delay_steps)
-        return env
-
-    return _init
+    return icon_config
 
 def load_icon_and_resize(path: str, target_height: int = 24) -> Optional[np.ndarray]:
     """
