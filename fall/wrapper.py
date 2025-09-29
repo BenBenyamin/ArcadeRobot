@@ -1,11 +1,12 @@
 import gymnasium as gym
 from stable_baselines3.common.vec_env import VecEnvWrapper
+from stable_baselines3.common.atari_wrappers import AtariWrapper
 from collections import deque
 from typing import Dict, Optional, Tuple
 import cv2
 import numpy as np
 
-from utils import alpha_blit_rgb , load_icon_and_resize
+from utils import alpha_blit_rgb , load_icon_and_resize , convert_obs_to_grayscale
 from utils import UP, DOWN, NO_OP
 
 
@@ -65,7 +66,7 @@ class IconOverlayVideoWrapper(gym.Wrapper):
 
     # ---- Core helpers ----
     def _overlay_icon_for_action(self, obs: np.ndarray, action: int) -> np.ndarray:
-        icon = self._icons.get(action)
+        icon = self._icons.get(int(action))
         alpha_blit_rgb(obs, icon, 255, self.icon_xy[0], self.icon_xy[1])
         return obs
 
@@ -101,17 +102,36 @@ class IconOverlayVideoWrapper(gym.Wrapper):
 
     # ---- Gym API ----
     def reset(self, **kwargs):
-        obs, info = self.env.reset(**kwargs)  # Gymnasium API
+        obs, info = self.env.reset(**kwargs)  # agent obs (grayscale if wrapped)
+
+        # always grab RGB from emulator for video
+        try:
+            rgb = self.env.unwrapped.render()                # Gymnasium (render_mode="rgb_array")
+        except TypeError:
+            rgb = self.env.unwrapped.render(mode="rgb_array")  # Classic Gym fallback
+
         if self.overlay_on_reset:
-            obs = self._overlay_icon_for_action(obs, self.reset_action_for_overlay)
-        self._display_and_maybe_write(obs)
+            obs_rgb = self._overlay_icon_for_action(rgb, self.reset_action_for_overlay)
+        else:
+            obs_rgb = rgb
+
+        self._display_and_maybe_write(obs_rgb)
         return obs, info
 
     def step(self, action: int):
         obs, reward, terminated, truncated, info = self.env.step(action)
-        obs = self._overlay_icon_for_action(obs, action)
-        self._display_and_maybe_write(obs)
+
+        # always grab RGB for video
+        try:
+            rgb = self.env.unwrapped.render()
+        except TypeError:
+            rgb = self.env.unwrapped.render(mode="rgb_array")
+
+        obs_rgb = self._overlay_icon_for_action(rgb, action)
+        self._display_and_maybe_write(obs_rgb)
+
         return obs, reward, terminated, truncated, info
+
 
 
     def start_recording(self, video_path: str) -> None:
@@ -212,8 +232,8 @@ class PongDelayInertiaWrapper(gym.Wrapper):
 
     def step(self, action: int):
         total_reward = 0.0
-        if action not in (NO_OP, UP, DOWN):
-            action = NO_OP
+        # if action not in (NO_OP, UP, DOWN):
+        #     action = NO_OP
 
         if self.prev_action != action:
             if action == NO_OP:
