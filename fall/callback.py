@@ -33,7 +33,7 @@ class VideoRecorderCallback(BaseCallback):
         base_env = gym.make(ENV_NAME, render_mode="rgb_array")
 
         # same preprocessing as training
-        base_env = AtariWrapper(base_env)
+        base_env = AtariWrapper(base_env, frame_skip=1)
 
         # Apply frame stacking manually (non-Vec version)
         base_env = gym.wrappers.FrameStackObservation(base_env,stack_size=4)
@@ -46,7 +46,8 @@ class VideoRecorderCallback(BaseCallback):
             icon_config=get_icon_config(),
             show_video=False,
             save_video=False,
-            scale= 4
+            scale= 4,
+            video_fps=5,
         )
 
         self.video_env.reset(seed = 0)
@@ -84,7 +85,7 @@ class VideoRecorderCallback(BaseCallback):
             if writer:
                 # Read the video file
                 video_reader = imageio.get_reader(video_filename)
-                frames = np.array([frame for i, frame in enumerate(video_reader) if i % 4 == 0])
+                frames = np.array([frame for i, frame in enumerate(video_reader)])
                 video_reader.close()
                 
                 # Reshape for PyTorch writer: (N, T, C, H, W)

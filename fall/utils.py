@@ -19,6 +19,13 @@ DOWN = 5
 
 ENV_NAME = "PongNoFrameskip-v4"
 
+
+def convert_obs_to_grayscale(obs: np.ndarray, h: int = 84, w: int = 84) -> np.ndarray:
+
+    frame = cv2.cvtColor(obs, cv2.COLOR_RGB2GRAY)
+    frame = cv2.resize(frame, (w, h), interpolation=cv2.INTER_AREA)
+    return frame[..., None] 
+
 def get_icon_config():
 
     # Resolve icon paths (adjust this to your layout)
