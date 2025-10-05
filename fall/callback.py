@@ -6,7 +6,7 @@ from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.logger import TensorBoardOutputFormat
 from stable_baselines3.common.atari_wrappers import AtariWrapper
 from stable_baselines3.common.env_util import make_atari_env
-
+import torch.nn.functional as F
 
 import gymnasium as gym
 
@@ -22,6 +22,7 @@ class VideoRecorderCallback(BaseCallback):
         fps : int = 60,
         verbose: int = 1,
         delay:int = 20,
+        stack_size:int = 4,
     ):
         super().__init__(verbose)
         self.record_freq = record_freq
@@ -36,10 +37,7 @@ class VideoRecorderCallback(BaseCallback):
         base_env = AtariWrapper(base_env, frame_skip=1)
 
         # Apply frame stacking manually (non-Vec version)
-        base_env = gym.wrappers.FrameStackObservation(base_env,stack_size=4)
-
-        if delay > 0:
-            base_env= PongDelayInertiaWrapper(base_env,delay_steps=delay)
+        base_env = gym.wrappers.FrameStackObservation(base_env,stack_size=stack_size)
 
         self.video_env = IconOverlayVideoWrapper(
             base_env,
@@ -47,8 +45,11 @@ class VideoRecorderCallback(BaseCallback):
             show_video=False,
             save_video=False,
             scale= 4,
-            video_fps=5,
+            video_fps=60,
         )
+
+        if delay > 0:
+            self.video_env= PongDelayInertiaWrapper(self.video_env,delay_steps=delay)
 
         self.video_env.reset(seed = 0)
     def _on_step(self) -> bool:
@@ -59,17 +60,19 @@ class VideoRecorderCallback(BaseCallback):
 
         # 3. Run a full episode with the current model
         obs ,_ = self.video_env.reset(seed = 0)
-        self.video_env.start_recording(video_filename)
+        self.video_env.env.start_recording(video_filename)
         done = False
-        while not done:
+        while not done: 
             obs = np.permute_dims(obs,(3,1,2,0))
             action, _ = self.model.predict(obs)
+            if action not in [NO_OP,UP,DOWN]:
+                print(action)
             obs, reward, terminated, truncated, info = self.video_env.step(int(action))
             
             done = terminated or truncated
 
         # 4. Close the environment. Your wrapper saves the file on close.
-        self.video_env.stop_recording()
+        self.video_env.env.stop_recording()
         self.logger.info(f"Video saved to {video_filename}")
 
         # 5. Log the saved video file to TensorBoard
@@ -85,18 +88,45 @@ class VideoRecorderCallback(BaseCallback):
             if writer:
                 # Read the video file
                 video_reader = imageio.get_reader(video_filename)
-                frames = np.array([frame for i, frame in enumerate(video_reader)])
+                frames = []
+                i = 0
+                for f in video_reader:
+                    if i%8 == 0:
+                        frames.append(f)
+                    i+=1
+                frames = np.array(frames,dtype=np.uint8)
                 video_reader.close()
                 
                 # Reshape for PyTorch writer: (N, T, C, H, W)
                 frames_tensor = torch.from_numpy(frames).permute(0, 3, 1, 2).unsqueeze(0)
+                B, T, C, H, W = frames_tensor.shape
+
+                # Flatten time into batch dimension: (B*T, C, H, W)
+                frames_2d = frames_tensor.view(-1, C, H, W).float()
+
+                # Compute target resolution
+                target_height = 240
+                target_width = int(W * target_height / H)
+
+                # Downsample all frames
+                frames_scaled = F.interpolate(
+                    frames_2d,
+                    size=(target_height, target_width),
+                    mode="area"
+                ).to(torch.uint8)
+
+                # Reshape back to (1, T, C, H', W')
+                frames_tensor = frames_scaled.view(B, T, C, target_height, target_width)
+
+                print(f"[VideoRecorderCallback] Logging video with shape {frames_tensor.shape}, dtype={frames_tensor.dtype}")
                 
                 writer.add_video(
                     "trajectory/agent_video",
                     frames_tensor,
-                    global_step=self.num_timesteps,
+                    global_step=self.model.num_timesteps,
                     fps=self.fps
                 )
+                writer.flush()
                 self.logger.info("Successfully logged video to TensorBoard.")
             else:
                 self.logger.warn("Could not find TensorBoard writer.")

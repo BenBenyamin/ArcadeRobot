@@ -39,7 +39,7 @@ class IconOverlayVideoWrapper(gym.Wrapper):
         save_video: bool = True,
         video_path: str = "video.mp4",
         video_fps: int = 30,
-        video_codec: str = "mp4v",  # try "avc1" if available
+        video_codec: str = "mp4v",
         overlay_on_reset: bool = True,
         reset_action_for_overlay: int = NO_OP,
     ):
@@ -268,7 +268,13 @@ class VectorizedPongDelayInertiaWrapper(VecEnvWrapper):
         self.delay_steps = int(delay_steps)
         self.prev_actions = np.full(self.num_envs, NO_OP, dtype=np.int64)
         self._desired_actions = None
+        self.allowed_actions = [NO_OP,UP,DOWN]
+        self.action_space = gym.spaces.Discrete(len(self.allowed_actions))
     
+    def action(self,act):
+
+        return self.allowed_actions[act]
+
     def reset(self,**kwargs):
 
         obs = self.venv.reset(**kwargs)
@@ -310,7 +316,7 @@ class VectorizedPongDelayInertiaWrapper(VecEnvWrapper):
             total_reward = 0.0
             obs, info, terminated, truncated, done = None, {}, False, False, False
 
-            if desired != prev:
+            if desired != prev and desired in (NO_OP,UP,DOWN):
                 if desired == NO_OP:
                     obs, total_reward, terminated, truncated, info, done = \
                         self._run_steps(i, prev, self.delay_steps // 2, total_reward)
