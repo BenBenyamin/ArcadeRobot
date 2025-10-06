@@ -5,6 +5,11 @@ from collections import deque
 from typing import Dict, Optional, Tuple
 import cv2
 import numpy as np
+from stable_baselines3.common.logger import TensorBoardOutputFormat
+import matplotlib.pyplot as plt
+import io
+from PIL import Image
+from utils import ALE_ACTION_MAP
 
 from utils import alpha_blit_rgb , load_icon_and_resize , convert_obs_to_grayscale
 from utils import UP, DOWN, NO_OP
@@ -268,12 +273,6 @@ class VectorizedPongDelayInertiaWrapper(VecEnvWrapper):
         self.delay_steps = int(delay_steps)
         self.prev_actions = np.full(self.num_envs, NO_OP, dtype=np.int64)
         self._desired_actions = None
-        self.allowed_actions = [NO_OP,UP,DOWN]
-        self.action_space = gym.spaces.Discrete(len(self.allowed_actions))
-    
-    def action(self,act):
-
-        return self.allowed_actions[act]
 
     def reset(self,**kwargs):
 
@@ -286,7 +285,7 @@ class VectorizedPongDelayInertiaWrapper(VecEnvWrapper):
     def step_async(self, actions):
         # return super().step_async(actions)
         actions = np.asarray(actions, dtype=np.int64)
-        actions[~np.isin(actions, [NO_OP, UP, DOWN])] = NO_OP
+        # actions[~np.isin(actions, [NO_OP, UP, DOWN])] = NO_OP
         self._desired_actions = actions
         
 
@@ -352,3 +351,125 @@ class VectorizedPongDelayInertiaWrapper(VecEnvWrapper):
             np.array(batch_dones, dtype=bool),
             batch_infos,
         )
+
+class VectorizedActionLoggerWrapper(VecEnvWrapper):
+    """
+    Logs agent actions to TensorBoard when an episode ends (done or truncated),
+    and includes a Matplotlib bar-plot image of action frequencies with
+    ALE action names as x-axis labels.
+    """
+
+    def __init__(self, venv, logger=None, tag_prefix: str = "policy",):
+        super().__init__(venv)
+        self.logger = logger
+        self.tag_prefix = tag_prefix
+
+        self._actions_per_env = [[] for _ in range(self.num_envs)]
+        self._episodes_logged = 0
+        self._tb_writer = None
+
+    # ----------------- VecEnv interface -----------------
+
+    def step_async(self, actions):
+        """Record chosen actions from the policy for each sub-env."""
+        if isinstance(actions, np.ndarray):
+            acts = actions.reshape(-1)
+        elif isinstance(actions, (list, tuple)):
+            acts = np.array(actions).reshape(-1)
+        else:
+            acts = np.array([actions])
+
+        for i in range(self.num_envs):
+            self._actions_per_env[i].append(int(acts[i] if acts.size > 1 else acts[0]))
+
+        self.venv.step_async(actions)   
+
+    def step_wait(self):
+        """When an episode ends, log its action histogram."""
+        obs, rewards, dones, infos = self.venv.step_wait()
+
+        for i, done in enumerate(dones):
+            if done:
+                self._log_episode_actions(i)
+                self._actions_per_env[i].clear()
+
+        return obs, rewards, dones, infos
+
+    def reset(self):
+        return self.venv.reset()
+
+    # ----------------- Logging helpers -----------------
+
+    def _ensure_tb_writer(self):
+        """Fetch and cache the TensorBoard writer from the SB3 logger."""
+        if self._tb_writer is not None:
+            return self._tb_writer
+        if self.logger is None:
+            return None
+
+        for fmt in self.logger.output_formats:
+            if isinstance(fmt, TensorBoardOutputFormat):
+                self._tb_writer = fmt.writer
+                break
+        return self._tb_writer
+
+    def _log_episode_actions(self, env_idx: int):
+        """Log Matplotlib bar chart of action frequencies with ALE names."""
+        writer = self._ensure_tb_writer()
+        buf = self._actions_per_env[env_idx]
+        if writer is None or not buf:
+            return
+
+        actions_np = np.asarray(buf, dtype=np.int32)
+        self._episodes_logged += 1
+        step = self._episodes_logged // 300
+
+        # --- Compute action frequencies ---
+        unique, counts = np.unique(actions_np, return_counts=True)
+
+        # Map actions to names, fall back to numeric if unknown
+        labels = [ALE_ACTION_MAP.get(int(a), str(a)) for a in unique]
+
+        # --- Create Matplotlib bar chart ---
+        plt.figure(figsize=(6, 6))
+        plt.bar(labels, counts, color="#1f77b4", edgecolor="black")
+        plt.title(f"Action Frequency (Episode) Step = {step}")
+        plt.xlabel("Action")
+        plt.ylabel("Count")
+        plt.xticks(ha="center")
+        plt.tight_layout()
+
+        # --- Convert figure to image array (HWC) ---
+        buf_img = io.BytesIO()
+        plt.savefig(buf_img, format="png", bbox_inches="tight")
+        plt.close()
+        buf_img.seek(0)
+        img = np.array(Image.open(buf_img))
+        buf_img.close()
+
+        # --- Log to TensorBoard Images tab ---
+        writer.add_image(
+            f"{self.tag_prefix}/actions_bar_plot",
+            img,
+            global_step=step,
+            dataformats="HWC",
+        )
+        writer.flush()
+
+    # ----------------- Public utilities -----------------
+
+    def set_logger(self, logger):
+        """Attach SB3-style logger at runtime."""
+        self.logger = logger
+        self._tb_writer = None  # reset cache so we pick up new writer
+
+    @staticmethod
+    def attach_logger(env, logger) -> bool:
+        """Traverse VecEnvWrapper chain and attach logger."""
+        current = env
+        while isinstance(current, VecEnvWrapper):
+            if isinstance(current, VectorizedActionLoggerWrapper):
+                current.set_logger(logger)
+                return True
+            current = current.venv
+        return False

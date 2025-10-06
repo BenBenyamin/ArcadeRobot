@@ -10,8 +10,8 @@ import torch.nn.functional as F
 
 import gymnasium as gym
 
-from wrapper import IconOverlayVideoWrapper , PongDelayInertiaWrapper , VectorizedPongDelayInertiaWrapper
-from utils import get_icon_config , convert_obs_to_grayscale
+from wrapper import IconOverlayVideoWrapper , PongDelayInertiaWrapper , VectorizedActionLoggerWrapper
+from utils import get_icon_config
 from utils import ENV_NAME , NO_OP , UP , DOWN
 
 class VideoRecorderCallback(BaseCallback):
@@ -65,8 +65,6 @@ class VideoRecorderCallback(BaseCallback):
         while not done: 
             obs = np.permute_dims(obs,(3,1,2,0))
             action, _ = self.model.predict(obs)
-            if action not in [NO_OP,UP,DOWN]:
-                print(action)
             obs, reward, terminated, truncated, info = self.video_env.step(int(action))
             
             done = terminated or truncated
@@ -91,7 +89,7 @@ class VideoRecorderCallback(BaseCallback):
                 frames = []
                 i = 0
                 for f in video_reader:
-                    if i%8 == 0:
+                    if i % 8 == 0:
                         frames.append(f)
                     i+=1
                 frames = np.array(frames,dtype=np.uint8)
@@ -134,4 +132,24 @@ class VideoRecorderCallback(BaseCallback):
         except Exception as e:
             self.logger.error(f"Failed to log video: {e}")
 
+        return True
+
+
+class OneTimeAttachLoggerCallback(BaseCallback):
+    """
+    Runs exactly once at the start of training.
+    Attaches the SB3 TensorBoard logger to the action logger wrapper.
+    """
+
+    def __init__(self, verbose: int = 0):
+        super().__init__(verbose)
+
+    def _on_training_start(self):
+        # Runs once when .learn() begins
+        VectorizedActionLoggerWrapper.attach_logger(self.training_env, self.logger)
+        if self.verbose > 0:
+            print("[OneTimeAttachLoggerCallback] Logger attached to ActionLoggerWrapper.")
+
+    def _on_step(self):
+        # Do nothing during steps
         return True

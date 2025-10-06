@@ -105,3 +105,9 @@ In this example, I alternating between **UP** and **DOWN** actions repeatedly, w
 - Finally, I switched to training with only a 5-frame delay. Results were noticeably better. Initially, there was little improvement, but eventually performance improved significantly. This was using vanilla PPO without frame stacking.
 
 <img width="991" height="478" alt="Image" src="https://github.com/user-attachments/assets/f9b1a335-0da8-4616-84e7-70493d593637" />
+
+### Meeting 10/3
+
+- Play Pong in an emulator to see if it behaves as expected.
+- Train the agent for a long time.
+- If SB3 does not work, look into implementing Sinong's code into the pipeline.

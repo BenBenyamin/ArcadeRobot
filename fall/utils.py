@@ -12,10 +12,25 @@ from stable_baselines3.common.env_util import make_atari_env
 # ---- Register ALE envs (needed in some setups) ----
 gym.register_envs(ale_py)
 
+
+
+# --- ALE Action Map for Pong and other Atari games ---
+# Reference: https://ale.farama.org/environments/pong/
+ALE_ACTION_MAP = {
+    0: "NO-OP",
+    1: "FIRE",
+    2: "RIGHT",
+    3: "LEFT",
+    4: "RIGHTFIRE",
+    5: "LEFTFIRE",
+}
+
+REV_ACTION_MAP = {v: k for k, v in ALE_ACTION_MAP.items()}
+
 # ---- Actions ----
-NO_OP = 0
-UP = 2
-DOWN = 5
+NO_OP = REV_ACTION_MAP["NO-OP"]
+UP = REV_ACTION_MAP["RIGHT"]
+DOWN = REV_ACTION_MAP["LEFT"]
 
 ENV_NAME = "PongNoFrameskip-v4"
 
@@ -39,6 +54,12 @@ def get_icon_config():
         UP:    (os.path.join(icon_dir, "UP.png"),    24),
         DOWN:  (os.path.join(icon_dir, "DOWN.png"),  24),
     }
+
+    for action in ALE_ACTION_MAP.keys():
+        if action in (NO_OP,UP,DOWN): continue
+
+        icon_config[action] = (os.path.join(icon_dir, f"{action}.png"),    24)
+
     return icon_config
 
 def load_icon_and_resize(path: str, target_height: int = 24) -> Optional[np.ndarray]:
