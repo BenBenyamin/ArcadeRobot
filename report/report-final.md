@@ -111,3 +111,22 @@ In this example, I alternating between **UP** and **DOWN** actions repeatedly, w
 - Play Pong in an emulator to see if it behaves as expected.
 - Train the agent for a long time.
 - If SB3 does not work, look into implementing Sinong's code into the pipeline.
+
+### Update — October 9
+
+- Fixed several bugs related to the vectorization of the Pong environment.  
+  Video logging is now functional, though the current setup does not yet feed observations back correctly during playback.
+- Trained an agent to play Pong with a 30-frame delay.
+- Evaluated the following methods:
+  - PPO with a frame stack of 30
+  - Recurrent PPO (SB3 Contrib) with no frame stack ([link to repository](https://github.com/Stable-Baselines-Team/stable-baselines3-contrib))
+  - Recurrent PPO with a frame stack of 4
+
+#### Performance Comparison
+
+<img width="2700" height="1499" alt="Training performance comparison" src="https://github.com/user-attachments/assets/34d5d362-05e2-41d0-a849-497090ac21e8" />
+
+#### RPPO Agent Gameplay (No Frame Stack)
+
+<video src="https://github.com/user-attachments/assets/83d6b8a2-d153-4731-b6b3-7a77f51f27dd" controls></video>
+
