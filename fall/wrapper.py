@@ -352,20 +352,24 @@ class VectorizedPongDelayInertiaWrapper(VecEnvWrapper):
             batch_infos,
         )
 
+
 class VectorizedActionLoggerWrapper(VecEnvWrapper):
     """
-    Logs agent actions to TensorBoard when an episode ends (done or truncated),
-    and includes a Matplotlib bar-plot image of action frequencies with
-    ALE action names as x-axis labels.
+    Accumulates agent actions across all environments over a fixed number of steps (log_every),
+    and logs a TensorBoard histogram + Matplotlib image of action frequencies.
+
+    This avoids per-episode logging and provides smoother, time-based aggregation.
     """
 
-    def __init__(self, venv, logger=None, tag_prefix: str = "policy",):
+    def __init__(self, venv, logger=None, tag_prefix: str = "policy", log_every: int = 1000):
         super().__init__(venv)
         self.logger = logger
         self.tag_prefix = tag_prefix
+        self.log_every = log_every
 
-        self._actions_per_env = [[] for _ in range(self.num_envs)]
-        self._episodes_logged = 0
+        # Accumulate actions across all envs
+        self._action_buffer = []
+        self._steps_logged = 0
         self._tb_writer = None
 
     # ----------------- VecEnv interface -----------------
@@ -379,19 +383,20 @@ class VectorizedActionLoggerWrapper(VecEnvWrapper):
         else:
             acts = np.array([actions])
 
+        # Flatten across environments
         for i in range(self.num_envs):
-            self._actions_per_env[i].append(int(acts[i] if acts.size > 1 else acts[0]))
+            self._action_buffer.append(int(acts[i] if acts.size > 1 else acts[0]))
 
-        self.venv.step_async(actions)   
+        self.venv.step_async(actions)
 
     def step_wait(self):
-        """When an episode ends, log its action histogram."""
+        """When enough steps accumulate, log the histogram."""
         obs, rewards, dones, infos = self.venv.step_wait()
 
-        for i, done in enumerate(dones):
-            if done:
-                self._log_episode_actions(i)
-                self._actions_per_env[i].clear()
+        self._steps_logged += 1
+        if self._steps_logged % self.log_every == 0:
+            self._log_accumulated_actions()
+            self._action_buffer.clear()
 
         return obs, rewards, dones, infos
 
@@ -413,33 +418,27 @@ class VectorizedActionLoggerWrapper(VecEnvWrapper):
                 break
         return self._tb_writer
 
-    def _log_episode_actions(self, env_idx: int):
-        """Log Matplotlib bar chart of action frequencies with ALE names."""
+    def _log_accumulated_actions(self):
+        """Log aggregated histogram over accumulated actions."""
         writer = self._ensure_tb_writer()
-        buf = self._actions_per_env[env_idx]
-        if writer is None or not buf:
+        if writer is None or not self._action_buffer:
             return
 
-        actions_np = np.asarray(buf, dtype=np.int32)
-        self._episodes_logged += 1
-        step = self._episodes_logged // 300
+        actions_np = np.asarray(self._action_buffer, dtype=np.int32)
 
-        # --- Compute action frequencies ---
+        # --- Compute histogram ---
         unique, counts = np.unique(actions_np, return_counts=True)
-
-        # Map actions to names, fall back to numeric if unknown
         labels = [ALE_ACTION_MAP.get(int(a), str(a)) for a in unique]
 
-        # --- Create Matplotlib bar chart ---
+        # --- Matplotlib bar chart ---
         plt.figure(figsize=(6, 6))
         plt.bar(labels, counts, color="#1f77b4", edgecolor="black")
-        plt.title(f"Action Frequency (Episode) Step = {step}")
+        plt.title(f"Action Frequency (last {self.log_every} steps)")
         plt.xlabel("Action")
         plt.ylabel("Count")
-        plt.xticks(ha="center")
+        plt.xticks(rotation=0, ha="center")
         plt.tight_layout()
 
-        # --- Convert figure to image array (HWC) ---
         buf_img = io.BytesIO()
         plt.savefig(buf_img, format="png", bbox_inches="tight")
         plt.close()
@@ -447,11 +446,16 @@ class VectorizedActionLoggerWrapper(VecEnvWrapper):
         img = np.array(Image.open(buf_img))
         buf_img.close()
 
-        # --- Log to TensorBoard Images tab ---
+        # --- TensorBoard: histogram + image ---
+        writer.add_histogram(
+            f"{self.tag_prefix}/actions_hist",
+            actions_np,
+            global_step=self._steps_logged,
+        )
         writer.add_image(
             f"{self.tag_prefix}/actions_bar_plot",
             img,
-            global_step=step,
+            global_step=self._steps_logged,
             dataformats="HWC",
         )
         writer.flush()

@@ -37,7 +37,10 @@ class VideoRecorderCallback(BaseCallback):
         base_env = AtariWrapper(base_env, frame_skip=1)
 
         # Apply frame stacking manually (non-Vec version)
-        base_env = gym.wrappers.FrameStackObservation(base_env,stack_size=stack_size)
+        if stack_size > 0:
+            base_env = gym.wrappers.FrameStackObservation(base_env,stack_size=stack_size)
+        
+        self.stack_size = stack_size
 
         self.video_env = IconOverlayVideoWrapper(
             base_env,
@@ -63,7 +66,8 @@ class VideoRecorderCallback(BaseCallback):
         self.video_env.env.start_recording(video_filename)
         done = False
         while not done: 
-            obs = np.permute_dims(obs,(3,1,2,0))
+            if self.stack_size > 0:
+                obs = np.permute_dims(obs,(3,1,2,0))
             action, _ = self.model.predict(obs)
             obs, reward, terminated, truncated, info = self.video_env.step(int(action))
             
