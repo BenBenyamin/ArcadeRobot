@@ -130,3 +130,33 @@ In this example, I alternating between **UP** and **DOWN** actions repeatedly, w
 
 <video src="https://github.com/user-attachments/assets/83d6b8a2-d153-4731-b6b3-7a77f51f27dd" controls></video>
 
+
+### Update — October 16
+
+<video src="https://github.com/user-attachments/assets/74128eec-5ef4-44e1-8816-94de90563dc6" controls></video>
+
+**Integrated ROS into the project**:
+- `env_node.py`: A node that runs the game and publishes the game frames to a topic (`pong_frame`).  
+  Removing frame-skip helped the game run at a much more reasonable speed.
+
+    ```python
+    self.env = VecTransposeImage(
+        make_atari_env(
+            env_id=ENV_NAME, 
+            seed=5, 
+            env_kwargs={"render_mode": "rgb_array"},
+            wrapper_kwargs={"frame_skip": 0},  # Disabled frame skip for smoother visuals
+        )
+    )
+    ```
+
+- `node.py`: The control node inherits from `HelloNode`, which is provided by Hello Robot.  
+  It loads the trained Recurrent PPO model, subscribes to the `pong_frame` topic, and pipes it into the model, which then commands the arm through a ROS action server (bottleneck ?). That server is implemented in ROS 1 and outside my control.  
+  - I had to patch `ros2_numpy` to work with my Python version.
+
+- I can use the robot drivers directly, which might yield better performance.  
+  This is what I used during the delay testing, though it requires running code directly on the robot rather than through the ROS driver.  
+ [Documentation](https://docs.hello-robot.com/0.3/python/moving/)
+
+- I tested the model with input delays of 30, 40, and 50 frames but it didn't work.
+  It becomes extremely sluggish at those delays — even when I am controlling the joystick it is difficult.
