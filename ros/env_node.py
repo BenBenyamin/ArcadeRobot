@@ -16,8 +16,7 @@ from cv_bridge import CvBridge
 from sensor_msgs.msg import Image
 
 ENV_NAME = "PongNoFrameskip-v4"
-MODEL_FILENAME = "RPPO_Delay=30_BEST.zip"
-SCALE = 3
+SCALE = 4
 
 
 class PongEnvNode(Node):
@@ -29,7 +28,8 @@ class PongEnvNode(Node):
             make_atari_env(
                 env_id=ENV_NAME, 
                 seed=5, 
-                env_kwargs={"render_mode": "rgb_array"}
+                env_kwargs={"render_mode": "rgb_array"},
+                wrapper_kwargs={"frame_skip": 0},
                 )
             )
         
