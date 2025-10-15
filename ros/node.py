@@ -4,13 +4,22 @@ from rclpy.action import ActionClient
 from control_msgs.action import FollowJointTrajectory
 from trajectory_msgs.msg import JointTrajectoryPoint
 from hello_misc import HelloNode
-import time
-
+from sensor_msgs.msg import Image
+import numpy as np
 
 class ArmExtendRetract(HelloNode):
     def __init__(self):
         super().__init__()
         HelloNode.main(self, 'arm_extend_retract', 'arm_extend_retract', wait_for_first_pointcloud=False)
+
+        
+        self.image_subscriber = self.create_subscription(Image,"pong_frame",self.image_callback,10)
+
+
+    def image_callback(self,msg:Image):
+        
+        img = np.frombuffer(msg.data, dtype=np.uint8).reshape(msg.height, msg.width)
+        # self.get_logger().info(f"GOT IMAGE! shape={img.shape}", throttle_duration_sec=0.5)
 
     def move_arm(self, lift, extension, yaw, duration_sec=4.0):
         """Send a single FollowJointTrajectory goal and wait for completion."""
@@ -63,29 +72,22 @@ class ArmExtendRetract(HelloNode):
         """Extend the arm and then retract."""
         while not self.joint_state.position:
             self.get_logger().info("Waiting for joint states...", throttle_duration_sec = 1.0)
-            # time.sleep(0.1)
 
-        while True:
-            # Extend
-            self.move_arm(lift=0.2, extension=0.2, yaw=0.0, duration_sec=1.0)
+        # while True:
+        #     # Extend
+        #     self.move_arm(lift=0.2, extension=0.2, yaw=0.0, duration_sec=1.0)
 
-            # Retract
-            self.move_arm(lift=0.2, extension=0.0, yaw=0.0, duration_sec=1.0)
-
-    def main(self):
-        self.extend_and_retract()
+        #     # Retract
+        #     self.move_arm(lift=0.2, extension=0.0, yaw=0.0, duration_sec=1.0)
 
 
-def main():
-    try:
-        node = ArmExtendRetract()
-        node.main()
-        node.new_thread.join()
-    except KeyboardInterrupt:
-        node.get_logger().info("Interrupted")
-    finally:
-        node.destroy_node()
-        rclpy.shutdown()
+def main(args=None):
+
+    minimal_publisher = ArmExtendRetract()
+
+    rclpy.spin(minimal_publisher)
+    minimal_publisher.destroy_node()
+    rclpy.shutdown()
 
 
 if __name__ == '__main__':
