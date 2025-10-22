@@ -14,10 +14,16 @@ import ale_py
 gym.register_envs(ale_py)
 from cv_bridge import CvBridge
 from sensor_msgs.msg import Image
+from std_msgs.msg import Float32
 
 ENV_NAME = "PongNoFrameskip-v4"
 SCALE = 4
 
+FPS = 60
+
+UP = 0.038
+DOWN = 0.022
+NO_OP = 0.03
 
 class PongEnvNode(Node):
 
@@ -52,10 +58,21 @@ class PongEnvNode(Node):
         self.screen = pygame.display.set_mode((width * SCALE, height * SCALE))
         pygame.display.set_caption("Pong (Pygame Render)")
 
-        fps = 30 
+        fps = FPS 
         self.timer = self.create_timer(1.0/fps, self.timer_callback)
+        self.obs = None
         self.image_publisher = self.create_publisher(Image, 'pong_frame',qos_profile=10)
+        self.joystick_state_pub = self.create_publisher(Float32,"joystick_state",qos_profile=10)
         self.bridge = CvBridge()
+
+        self.prev_action = 0
+        self.action_cnt = 0
+        self.action_limt = 1000
+
+        from time import sleep
+        sleep(5)
+        self.obs_publisher = self.create_timer(1.0/50,self.publish_obs_timer)
+
     
     def read_action(self):
         """
@@ -69,18 +86,42 @@ class PongEnvNode(Node):
         # Keyboard
         if keys[pygame.K_UP]:
             action = 2
+            self.get_logger().info(f"UP was pressed")
         elif keys[pygame.K_DOWN]:
             action = 3
+            self.get_logger().info(f"DOWN was pressed")
+        
 
         # Joystick (buttons override keyboard)
         if self.joystick:
             hat_x, hat_y = self.joystick.get_hat(0)  # read first hat
             if hat_y == 1:   # UP
                 action = 2
+                self._publish_joystick_state(UP)
             elif hat_y == -1:  # DOWN
                 action = 3
+                self._publish_joystick_state(DOWN)
+            
+            else:
+                self._publish_joystick_state(NO_OP)
+
+        if (self.prev_action == action):
+            self.action_cnt+=1
+
+            if (self.action_cnt >= self.action_limt):
+                action = 0
+        
+        else:
+            self.action_cnt = 0
+            self.prev_action = action
 
         return np.array([action])
+
+    def _publish_joystick_state(self,state:String):
+
+        msg = Float32()
+        msg.data = state
+        self.joystick_state_pub.publish(msg)
 
     def render(self):
 
@@ -90,9 +131,12 @@ class PongEnvNode(Node):
         self.screen.blit(surf, (0, 0))
         pygame.display.flip()
 
-    def publish_frame(self,obs):
+    def publish_frame(self):
+
+        if self.obs is None: return
+
         # Remove batch and channel dimensions: (84,84)
-        img = obs[0, 0, :, :]
+        img = self.obs[0, 0, :, :]
         
         # Convert to ROS Image message
         msg = self.bridge.cv2_to_imgmsg(img, encoding="mono8")
@@ -103,9 +147,9 @@ class PongEnvNode(Node):
     def timer_callback(self):
         action = self.read_action()
         
-        obs, rewards, dones, infos = self.env.step(action)
+        self.obs, rewards, dones, infos = self.env.step(action)
 
-        self.publish_frame(obs)
+        # self.publish_frame(obs)
         
         self.env.render()
         if dones.any():
@@ -113,6 +157,13 @@ class PongEnvNode(Node):
             self.env.reset()
 
         self.render()
+
+    def publish_obs_timer(self):
+
+
+        self.publish_frame()
+
+
 
 
 def main(args=None):
