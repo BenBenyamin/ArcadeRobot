@@ -160,3 +160,110 @@ In this example, I alternating between **UP** and **DOWN** actions repeatedly, w
 
 - I tested the model with input delays of 30, 40, and 50 frames but it didn't work.
   It becomes extremely sluggish at those delays — even when I am controlling the joystick it is difficult.
+
+
+### Update — October 23
+
+
+<video src = https://github.com/user-attachments/assets/15635331-57aa-4dd2-9bb0-258548aa46fb></video>
+
+-**A new Control Node for the Stretch3**.
+
+ The node runs on the Stretch3 and listens to commands from the model.
+- The following QoS profile was used - is it the right choice?
+
+ [Documentation](https://docs.ros.org/en/jazzy/Concepts/Intermediate/About-Quality-of-Service-Settings.html)
+```python
+
+  qos = QoSProfile(
+      history=HistoryPolicy.KEEP_LAST, #only store up to N samples, configurable via the queue depth option.
+      depth=1, # Store only the last one
+      reliability=ReliabilityPolicy.BEST_EFFORT, #Attempt to deliver samples, but may lose them if the network is not robust.
+      durability=DurabilityPolicy.VOLATILE  #No attempt is made to persist samples.
+  )
+```
+<u>Observations</u>:
+
+1. It seems too be slow
+2. Responses were bagged for ~2.5 mins
+
+| Time(ms) | Joystick Status | Commanded |
+|----------|-----------------|-----------|
+| 0        |                 |UP         |
+| 10.391   | NO-OP           |           |
+| 27.200   | NO-OP           |           |
+| 43.782   | NO-OP           |           |
+| 60.509   | NO-OP           |           |
+| 77.350   | NO-OP           |           |
+| 94.034   | NO-OP           |           |
+| 110.550  | NO-OP           |           |
+| 127.314  | NO-OP           |           |
+| 143.976  | NO-OP           |           |
+| 160.527  | NO-OP           |           |
+| 177.264  | NO-OP           |           |
+| 193.819  | NO-OP           |           |
+| 210.394  | NO-OP           |           |
+| 227.204  | NO-OP           |           |
+| 243.775  | NO-OP           |           |
+| 260.516  | NO-OP           |           |
+| 277.419  | NO-OP           |           |
+| 293.876  | NO-OP           |           |
+| 310.618  | DOWN            |           |
+| 327.355  | DOWN            |           |
+| 343.902  | DOWN            |           |
+| 360.612  | NO-OP           |           |
+| 377.302  | NO-OP           |           |
+| 393.858  | NO-OP           |           |
+| 410.415  | NO-OP           |           |
+| 427.250  | NO-OP           |           |
+| 444.002  | NO-OP           |           |
+| 460.457  | NO-OP           |           |
+| 477.419  | NO-OP           |           |
+| 493.861  | NO-OP           |           |
+| 510.638  | NO-OP           |           |
+| 527.312  | NO-OP           |           |
+| 543.881  | NO-OP           |           |
+| 560.559  | UP              |           |
+
+**Example calculation**
+
+This data snippet indicates an apparent delay of 560.6 ms, representing the time difference between the issued command and the actual observed status.
+
+The average over ~2.5 minutes (Wireless) is shown below.
+
+<img width="1639" height="1050" alt="Image" src="https://github.com/user-attachments/assets/3ca532a7-a468-4774-b1cf-6f0146b31210" />
+
+Results using an ethernet cable (~3.5 min of run time):
+
+
+<img width="1623" height="1050" alt="Image" src="https://github.com/user-attachments/assets/837158e2-cfde-4312-8d0c-fe484857a6a5" />
+
+
+**Problems with the Enviorment**
+
+The model was found to be "cheating" when reaching a really high delay value. The action histogram has been logged in TensorBoard:
+
+<img width="590" height="590" alt="Image" src="https://github.com/user-attachments/assets/936e32ab-2f96-47f4-a6ed-5c73f5f55a9f" />
+
+The model should only be performing LEFT, RIGHT, and NO-OP, but the model is "cheating". The issue has been corrected (needs testing).
+
+
+### **Inference Delay**
+
+<img width="2400" height="1500" alt="Inference Delay Plot" src="https://github.com/user-attachments/assets/0b30732b-4bf7-4a78-880b-2cc3acf7ed77" />
+
+The inference delay benchmark was performed over 500 samples.  
+Results indicate the following performance metrics:
+
+- **Mean delay:** 3.655 ms  
+- **Standard deviation:** 0.849 ms  
+- **Total runtime:** 100 s
+
+At this delay, the system achieves:
+- **≈ 0.22 frames per 60 FPS frame**
+- **≈ 0.11 frames per 30 FPS frame**
+
+**Points of Concern**
+
+- Is the modeled behaviour correct? Should stochasticity be introduced?
+- Is using ROS here the right approach? If so, are topics the most effective communication mechanism (compared to services or actions)?
