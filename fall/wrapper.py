@@ -13,7 +13,7 @@ from utils import ALE_ACTION_MAP
 
 from utils import alpha_blit_rgb , load_icon_and_resize , convert_obs_to_grayscale
 from utils import UP, DOWN, NO_OP
-from gymnasium import spaces
+from utils import ALE_EFFECTIVE_ACTION_MAP
 
 class IconOverlayVideoWrapper(gym.Wrapper):
     """
@@ -216,7 +216,6 @@ class PongDelayInertiaWrapper(gym.Wrapper):
         super().__init__(env)
         self.delay_steps = int(delay_steps)
         self.prev_action = NO_OP
-        
 
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)  # Gymnasium API
@@ -274,10 +273,6 @@ class VectorizedPongDelayInertiaWrapper(VecEnvWrapper):
         self.delay_steps = int(delay_steps)
         self.prev_actions = np.full(self.num_envs, NO_OP, dtype=np.int64)
         self._desired_actions = None
-        
-        # redefine the action space
-        self.allowed_actions = np.array([NO_OP, UP, DOWN], dtype=np.int64)
-        self.action_space = spaces.Discrete(len(self.allowed_actions))
 
     def reset(self,**kwargs):
 
@@ -288,17 +283,10 @@ class VectorizedPongDelayInertiaWrapper(VecEnvWrapper):
         return obs
     
     def step_async(self, actions):
+        # return super().step_async(actions)
         actions = np.asarray(actions, dtype=np.int64)
+        # actions[~np.isin(actions, [NO_OP, UP, DOWN])] = NO_OP
         self._desired_actions = actions
-        mapped_actions = self.allowed_actions[actions]
-        super().step_async(mapped_actions)
-
-    # def step_async(self, actions):
-        
-
-    #     actions = np.asarray(actions, dtype=np.int64)
-        
-    #     self._desired_actions = actions
         
 
     def _run_steps(self, env_id: int, action: int, n_steps: int, total_reward: float):
@@ -327,7 +315,9 @@ class VectorizedPongDelayInertiaWrapper(VecEnvWrapper):
             total_reward = 0.0
             obs, info, terminated, truncated, done = None, {}, False, False, False
 
-            if desired != prev and desired in (NO_OP,UP,DOWN):
+            # Map the desired to the effective action map
+            desired = np.int64(ALE_EFFECTIVE_ACTION_MAP[desired])
+            if desired != prev:
                 if desired == NO_OP:
                     obs, total_reward, terminated, truncated, info, done = \
                         self._run_steps(i, prev, self.delay_steps // 2, total_reward)
@@ -363,6 +353,9 @@ class VectorizedPongDelayInertiaWrapper(VecEnvWrapper):
             np.array(batch_dones, dtype=bool),
             batch_infos,
         )
+
+        
+
 
 
 class VectorizedActionLoggerWrapper(VecEnvWrapper):
