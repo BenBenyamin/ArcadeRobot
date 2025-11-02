@@ -1,9 +1,7 @@
 import gymnasium as gym
-from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.callbacks import CallbackList, CheckpointCallback
 from stable_baselines3 import PPO , DQN
 
-from stable_baselines3.common.atari_wrappers import AtariWrapper
 from stable_baselines3.common.env_util import make_atari_env
 from stable_baselines3.common.vec_env import VecFrameStack , VecTransposeImage
 

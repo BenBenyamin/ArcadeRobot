@@ -5,6 +5,7 @@ import torch
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.logger import TensorBoardOutputFormat
 from stable_baselines3.common.atari_wrappers import AtariWrapper
+from stable_baselines3.common.vec_env import  VecTransposeImage
 from stable_baselines3.common.env_util import make_atari_env
 import torch.nn.functional as F
 
@@ -31,10 +32,14 @@ class VideoRecorderCallback(BaseCallback):
         os.makedirs(self.video_path, exist_ok=True)
 
         
-        base_env = gym.make(ENV_NAME, render_mode="rgb_array")
-
-        # same preprocessing as training
-        base_env = AtariWrapper(base_env, frame_skip=1)
+        base_env = VecTransposeImage(
+            make_atari_env(
+                env_id=ENV_NAME, 
+                seed=5, 
+                env_kwargs={"render_mode": "rgb_array"},
+                wrapper_kwargs={"frame_skip": 0},
+                )
+            )
 
         # Apply frame stacking manually (non-Vec version)
         if stack_size > 0:
@@ -43,7 +48,7 @@ class VideoRecorderCallback(BaseCallback):
         self.stack_size = stack_size
 
         self.video_env = IconOverlayVideoWrapper(
-            base_env,
+            base_env.envs[0],
             icon_config=get_icon_config(),
             show_video=False,
             save_video=False,
@@ -150,9 +155,11 @@ class OneTimeAttachLoggerCallback(BaseCallback):
 
     def _on_training_start(self):
         # Runs once when .learn() begins
-        VectorizedActionLoggerWrapper.attach_logger(self.training_env, self.logger)
-        if self.verbose > 0:
+        attached = VectorizedActionLoggerWrapper.attach_logger(self.training_env, self.logger)
+        if self.verbose > 0 and attached:
             print("[OneTimeAttachLoggerCallback] Logger attached to ActionLoggerWrapper.")
+        else:
+            raise IOError("[OneTimeAttachLoggerCallback] Couldn't find Logger to attach.")
 
     def _on_step(self):
         # Do nothing during steps

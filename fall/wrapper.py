@@ -482,3 +482,50 @@ class VectorizedActionLoggerWrapper(VecEnvWrapper):
                 return True
             current = current.venv
         return False
+
+
+import numpy as np
+from stable_baselines3.common.vec_env import VecEnvWrapper
+
+
+class ActionPenaltyVecWrapper(VecEnvWrapper):
+    """
+    VecEnvWrapper that penalizes certain actions (e.g., NO_OP)
+    while preserving the original reward for logging.
+
+    Parameters
+    ----------
+    venv : VecEnv
+        The vectorized environment to wrap.
+    penalized_actions : list[int]
+        The discrete action indices to penalize (e.g., [0]).
+    penalty : float
+        Reward penalty applied when a penalized action is chosen.
+    """
+
+    def __init__(self, venv, penalized_actions, penalty=-0.1):
+        super().__init__(venv)
+        self.penalized_actions = np.array(penalized_actions, dtype=np.int64)
+        self.penalty = float(penalty)
+
+    def step_wait(self):
+        # Step the underlying VecEnv
+        obs, rewards, dones, infos = self.venv.step_wait()
+
+        # Store original rewards before modification
+        for i, info in enumerate(infos):
+            info["original_reward"] = rewards[i]
+
+        # Apply penalty vectorized over all envs
+        penalties = np.isin(self.actions, self.penalized_actions) * self.penalty
+        rewards = rewards + penalties
+
+        return obs, rewards, dones, infos
+
+    def step_async(self, actions):
+        # Store the actions so step_wait knows what was taken
+        self.actions = np.array(actions)
+        self.venv.step_async(actions)
+
+    def reset(self, **kwargs):
+        return self.venv.reset(**kwargs)

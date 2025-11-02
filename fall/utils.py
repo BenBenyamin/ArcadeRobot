@@ -25,6 +25,24 @@ ALE_ACTION_MAP = {
     5: "LEFTFIRE",
 }
 
+_REMAPPING = {
+    "NO-OP"     : "NO-OP",
+    "FIRE"      : "NO-OP",
+    "RIGHT"     : "RIGHT",
+    "LEFT"      : "LEFT",
+    "RIGHTFIRE" : "RIGHT",
+    "LEFTFIRE"  : "LEFT",
+}
+
+# GET THE NUMBERS
+ALE_EFFECTIVE_ACTION_MAP = {
+    k: next(
+        num for num, name in ALE_ACTION_MAP.items() 
+        if name == _REMAPPING[v]
+    )
+    for k, v in ALE_ACTION_MAP.items()
+}
+
 REV_ACTION_MAP = {v: k for k, v in ALE_ACTION_MAP.items()}
 
 # ---- Actions ----
