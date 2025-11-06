@@ -267,3 +267,90 @@ At this delay, the system achieves:
 
 - Is the modeled behaviour correct? Should stochasticity be introduced?
 - Is using ROS here the right approach? If so, are topics the most effective communication mechanism (compared to services or actions)?
+
+
+### Update — October 30
+
+This week was focused on understanding why the current model fails to control the robot effectively. The control node was modified to wait for movement completion, resulting in slight improvement but continued late paddle movement. Models trained with 30, 40, 50, and 100 frame delays, as well as live FPS tuning, failed to resolve the timing issue; the 30-delay model performed best but still missed the ball.
+
+A histogram analysis of model actions showed unaccounted Pong actions (“Fire Right” and “Fire Left”) that also move the paddle. These were added to the inertia wrapper, but retraining still produced poor performance. Even after 70M steps, the model tended to remain idle. Introducing a small penalty (-0.2) for NO-OP actions improved results slightly, while stronger penalties (-0.1, -0.5, -1) had no effect. The maximum reward is 21 and minimum is -21, with current training stabilizing around -19 and remaining noisy.
+
+Training is now being conducted with half the delay steps, with the game running at half speed to test timing improvements. During model training, an initial review of one of three referenced papers revealed that the approaches handle delay using action or observation buffers. These implementations differ from physically realistic dynamic systems because they permit instantaneous action changes. Further clarification from Simon is being sought regarding this difference.
+
+
+
+### Update — November 6
+
+* Tested the environment with `delay = 0`, but the model still failed to converge.
+* Changed approach: instead of manually wrapping Stable Baselines3’s `VecEnv` and then wrapping the environment around it, used the built-in `make_vec_env` function to construct the Atari environment. This mirrors the behavior of SB3’s internal `make_atari_env` function.
+
+```python
+def make_atari_env(
+    env_id: Union[str, Callable[..., gym.Env]],
+    n_envs: int = 1,
+    seed: Optional[int] = None,
+    start_index: int = 0,
+    monitor_dir: Optional[str] = None,
+    wrapper_kwargs: Optional[dict[str, Any]] = None,
+    env_kwargs: Optional[dict[str, Any]] = None,
+    vec_env_cls: Optional[Union[type[DummyVecEnv], type[SubprocVecEnv]]] = None,
+    vec_env_kwargs: Optional[dict[str, Any]] = None,
+    monitor_kwargs: Optional[dict[str, Any]] = None,
+) -> VecEnv:
+    """
+    Creates a wrapped, monitored VecEnv for Atari environments.
+    This is a wrapper around ``make_vec_env`` that includes common preprocessing for Atari games.
+    """
+    return make_vec_env(
+        env_id,
+        n_envs=n_envs,
+        seed=seed,
+        start_index=start_index,
+        monitor_dir=monitor_dir,
+        wrapper_class=AtariWrapper,  # <--- Main difference
+        env_kwargs=env_kwargs,
+        vec_env_cls=vec_env_cls,
+        vec_env_kwargs=vec_env_kwargs,
+        monitor_kwargs=monitor_kwargs,
+        wrapper_kwargs=wrapper_kwargs,
+    )
+```
+
+In testing, it was unclear whether manually passing a custom environment creation function like the one below performed as well as `make_atari_env`:
+
+```python
+def make_pong_env():
+    env = gym.make(ENV_NAME)
+    env = AtariWrapper(env)
+    env = PongDelayInertiaWrapper(env, delay_steps=DELAY)
+    return env
+
+# Then wrapped with:
+env = make_vec_env(make_pong_env, N_ENVS)
+```
+
+To simplify and control the wrapper order more cleanly, switched to a wrapper chain class, which sequentially applies each wrapper:
+
+```python
+wrap = make_wrapper_chain([
+    (PongDelayInertiaWrapper, {"delay_steps": DELAY}),
+    (AtariWrapper, {}),
+    (ActionSubsetWrapper, {
+        "allowed_actions": [
+            k for k, v in ALE_ACTION_MAP.items() if v in {"NO-OP", "RIGHT", "LEFT"}
+        ]
+    }),
+    (ActionPenalty, {"penalized_actions": [REV_ACTION_MAP["NO-OP"]], "penalty": REW}),
+])
+
+env = make_vec_env(ENV_NAME, N_ENVS, wrapper_class=wrap)
+```
+
+**Note:** `PongDelayInertiaWrapper` must be applied before `AtariWrapper` because `AtariWrapper` introduces a frame skip (`=4`). Reversing the order would amplify the delay by the frame skip factor.
+
+---
+
+* Finally, tested all Stable Baselines3 (and contrib) policies that support image-based observations.
+  The figure below shows comparative performance across models:
+
+<img width="1000" height="600" alt="Image" src="https://github.com/user-attachments/assets/709fefad-63dd-4e8b-8beb-ce7d2f76e5d2" />
