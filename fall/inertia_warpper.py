@@ -49,7 +49,8 @@ class PongDelayStochasticInertiaWrapper(gym.Wrapper):
     def delay_steps(self):
 
         lat = np.random.choice(self.latencies) + np.random.normal(0, self.sigma)
-        return int(lat)
+        lat = np.maximum(lat, np.min(self.latencies))
+        return round(lat)
 
 
     def _run_steps(self, action: int, n_steps: int, total_reward: float):
