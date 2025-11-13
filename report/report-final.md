@@ -354,3 +354,17 @@ env = make_vec_env(ENV_NAME, N_ENVS, wrapper_class=wrap)
   The figure below shows comparative performance across models:
 
 <img width="1000" height="600" alt="Image" src="https://github.com/user-attachments/assets/709fefad-63dd-4e8b-8beb-ce7d2f76e5d2" />
+
+### Update — November 13
+
+
+<video src="https://github.com/user-attachments/assets/eef50b27-4beb-4fc7-b969-0457e76acc26"></video>
+
+* Tested the setup entirely in ROS simulation; the agent was still unable to win the game despite the controlled environment.
+* Added domain randomization: the delay is now sampled from a pool of previously measured delays, with additional Gaussian noise (using a standard deviation derived from the delay distribution). The resulting delay is clipped to remain above the minimum measured value.
+* Migrated the codebase to run fully onboard, removing ROS dependencies and enabling standalone execution.
+* Observed partial success during gameplay: the agent often maneuvers to a specific position and remains stationary while winning, exposing a flaw in the game logic.
+* Agent behavior remains inconsistent. Success depends on reaching that position, which occasionally fails, resulting in game losses.
+* Continued training did not improve performance; in several cases, performance degraded further.
+* The robot’s gripper exhibits slipping, potentially contributing to unstable results. Model training remains slow.
+* Currently collecting additional delay measurements to better capture real-world behavior and improve model fidelity.
