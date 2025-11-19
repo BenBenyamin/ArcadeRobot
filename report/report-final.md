@@ -368,3 +368,26 @@ env = make_vec_env(ENV_NAME, N_ENVS, wrapper_class=wrap)
 * Continued training did not improve performance; in several cases, performance degraded further.
 * The robot’s gripper exhibits slipping, potentially contributing to unstable results. Model training remains slow.
 * Currently collecting additional delay measurements to better capture real-world behavior and improve model fidelity.
+
+### Update — November 20
+
+
+* Processed the latency log file to measure the delay between issuing an action and returning to the neutral position, since every state transition must pass through that configuration.
+
+<img width="600" height="400" alt="Image" src="https://github.com/user-attachments/assets/db5cb6fe-f8d8-46d6-872d-fe7b597192cf" />
+
+The histogram indicates a multimodal latency distribution, so a Gaussian Mixture Model (GMM) was fit to the data. The dataset contains approximately 10k measurements collected over one hour of continuous robot operation.
+
+<img width="800" height="500" alt="Image" src="https://github.com/user-attachments/assets/4671dade-b1c7-45f1-83f0-8b31eeefb71b" />
+
+The GMM identifies four Gaussian components. Each component has a very small standard deviation (≈2 ms), corresponding to less than one frame at 30 FPS. Training now uses these sampled delays, and additional Gaussian noise is injected to increase variability. A noise level of σ = 0.304 seconds was selected because this level yields roughly a 10% probability of adding or removing one or more frames of latency.
+
+<img width="2640" height="1540" alt="Image" src="https://github.com/user-attachments/assets/35b8e98d-14ca-440f-b884-1fe5a71061c9" />
+
+
+* Added frame skip to the real-time gameplay loop. With frame skip enabled, model behavior aligns more closely with simulation. Running the controller at 1/4 speed (frame skip = 4) alone did not create improvements; setting the environment’s frame skip to 4 produced meaningful performance gains. The game becomes slightly choppier visually, but real-world performance improves significantly.
+
+* Training speed remains **very slow**. The primary bottleneck is the CPU-based emulator, resulting in approximately five days required for 500M steps. Policy performance continues trending upward despite slow throughput.
+
+* Added *Kaboom* to the training process. Results are pending.
+

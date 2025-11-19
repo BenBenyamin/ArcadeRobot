@@ -16,6 +16,7 @@ from utils import UP, DOWN, NO_OP
 from utils import ALE_EFFECTIVE_ACTION_MAP
 from gymnasium import spaces
 import pickle
+from latency_sampler import LatencySampler
 
 
 class PongDelayStochasticInertiaWrapper(gym.Wrapper):
@@ -25,19 +26,12 @@ class PongDelayStochasticInertiaWrapper(gym.Wrapper):
     action.
     """
 
-    def __init__(self, env, delay_steps: int = 10,lat_pickle_filename:str = "",target_fps:int = 30):
+    def __init__(self, env, lat_pickle_filename:str = "",target_fps:int = 30,noise_std:float = 0.304):
         super().__init__(env)
-        self._delay_steps = int(delay_steps)
         self.prev_action = NO_OP
 
-        with open(lat_pickle_filename, "rb") as f:
-            lat = pickle.load(f)
-        
-        self.target_fps = target_fps
-        
-        self.latencies = (target_fps*np.array(lat)/1000).astype(int)
 
-        self.sigma = np.std(self.latencies, ddof=1)
+        self.lat_sampler = LatencySampler(lat_pickle_filename,target_fps, noise_std)
 
 
     def reset(self, **kwargs):
@@ -48,9 +42,7 @@ class PongDelayStochasticInertiaWrapper(gym.Wrapper):
     @property
     def delay_steps(self):
 
-        lat = np.random.choice(self.latencies) + np.random.normal(0, self.sigma)
-        lat = np.maximum(lat, np.min(self.latencies))
-        return round(lat)
+        return self.lat_sampler.sample()
 
 
     def _run_steps(self, action: int, n_steps: int, total_reward: float):
@@ -72,18 +64,18 @@ class PongDelayStochasticInertiaWrapper(gym.Wrapper):
             if action == NO_OP:
                 # Coasting inertia: half delay on previous action
                 obs, total_reward, terminated, truncated, info, done = \
-                    self._run_steps(self.prev_action, self.delay_steps // 2, total_reward)
+                    self._run_steps(self.prev_action, self.delay_steps , total_reward)
                 if done:
                     return obs, total_reward, terminated, truncated, info
             else:
                 # First half: previous action
                 obs, total_reward, terminated, truncated, info, done = \
-                    self._run_steps(self.prev_action, self.delay_steps // 2, total_reward)
+                    self._run_steps(self.prev_action, self.delay_steps , total_reward)
                 if done:
                     return obs, total_reward, terminated, truncated, info
                 # Second half: NO_OP
                 obs, total_reward, terminated, truncated, info, done = \
-                    self._run_steps(NO_OP, self.delay_steps // 2, total_reward)
+                    self._run_steps(NO_OP, self.delay_steps , total_reward)
                 if done:
                     return obs, total_reward, terminated, truncated, info
 
@@ -193,3 +185,19 @@ def make_wrapper_chain(wrappers):
                 env = wrapper(env, **kwargs)
             super().__init__(env)
     return WrapperChain
+
+class RewardMultiplier(gym.Wrapper):
+
+    def __init__(self, env , multiplier:float):
+        
+        super().__init__(env)
+        self.multiplier = multiplier
+
+    
+    def step(self, action):
+
+        obs, reward, terminated, truncated, info = self.env.step(action)
+
+        reward *= self.multiplier
+        
+        return obs, reward, terminated, truncated, info
