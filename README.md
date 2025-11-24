@@ -2,13 +2,13 @@
 
 > **Work in Progress**
 
-Please see `spring-report/report.md` for more detailed breakdown of the project status.
+[![Watch the video](https://img.youtube.com/vi/FJ-UCm9jRK4/maxresdefault.jpg)](https://www.youtube.com/watch?v=FJ-UCm9jRK4)
 
 ## Project Overview
 This repository contains the spring‑quarter achievements exploring how a robot arm can learn to play an arcade game (Pong) under delayed and sparse reward conditions, using reinforcement learning.
 
 The core idea is to investigate algorithms that handle delayed feedback and sparse rewards in a physical setup. A custom interface delays state/action observations. The agent is trained end‑to‑end despite observation/action latency.
-The robot used is the [Stretch3 from Hello Robotics](https://hello-robot.com/stretch-3-product).
+The robot used is the [Stretch3 from Hello Robotic](https://hello-robot.com/stretch-3-product).
 
 ## Outcomes & Deliverables
 - A set of Jupyter notebooks demonstrating **CNN‑based RL**, **computer‑vision control**, and a **VAE** for state representation.  
