@@ -1,3 +1,42 @@
+"""
+[Enter title here]
+Reinforcement Learning Jargon:
+
+π   : The policy.
+θ   : The policy weights / parameters.
+a   : The action.
+s   : The state
+𝔼(x): The mean of x (practically).
+Rt  : Accumlated discounted reward (starting from time t)
+
+[The value function , V]
+The value is the expected accumlated discounted reward given a given state s:
+    V(s) = 𝔼(R|s) = 𝔼(Σ(γ^k *r | s)) 
+    γ = discount factor for future rewards.
+
+[The Q-value function,Q]
+
+The Q value is the expected accumlated discounted reward of taking a specific action a give state s.
+
+Q(s,a) = 𝔼(Rt|s,a)
+
+[Difference between Q and V]
+
+V  = f(s)  measures how good the state is on average, 
+Q = f(s,a) measures how good a *specific action* given the state.
+
+[The advantage function, A]
+    
+The difference between the Q value and the value. 
+The advantage measures how much better or worse a specific action is compared to 
+the average expected value of the state.
+
+A(s,a) = Q(s,a) - V(s)
+
+A > 0 : The action is better than the average.
+A < 0 : The action is worse than the average.
+
+"""
 import torch
 import torch.nn as nn
 import numpy as np
@@ -5,13 +44,63 @@ import torch.distributions as D
 import gymnasium as gym
 
 class ActorCritic(nn.Module):
-    ## Adapted from cleanRL , here : https://github.com/vwxyzjn/cleanrl/blob/master/cleanrl/ppo.py
-    def __init__(self,state_dim, action_dim, hidden_size=64 ,actor = None, continuous=False):
+    """
+    Adapted from cleanRL : https://github.com/vwxyzjn/cleanrl/blob/master/cleanrl/ppo.py
+
+    The base [policy , π_θ] for PPO. This is essentially the PPO's core.
+    This is a simple MLP, but there is also an option to pass in a custom network.
+
+    In the default case , the network structure looks like this:
+    Input : Observation 
+    Output : Action probability distribution , value
+    
+    Actor:
+        The actor's job is to choose the best action given the observation. If not specified:
+        [observation]               (state_dim)
+            → [hidden layer]        (hidden_size)
+            → [hidden layer]        (hidden_size)
+            → [action distribution] (action_dim)
+    Critic:
+        The critic's job is to estimate the value of the current state given the observation.
+        [observation]        (state_dim)
+            → [hidden layer] (hidden_size)
+            → [hidden layer] (hidden_size)
+            → [value]        (1)
+
+    Args:
+    state_dim (int): Dimension of the input observation.
+    action_dim (int): Dimension of the output action.
+    hidden_size (int): The size of the hidden layer. Default is 64 (taken from cleanRL)
+    actor (nn.Module, optional): Optional custom actor network. If None then the one from cleanRL is used.
+    continuous (bool, optional): Does the environment have continuous actions. Defaults to False.
+    init_weights(bool, optional): Whether to weight initialization or not. Defaults to True.
+    actor_std (float, optional): Standard deviation for continuous actor distribution. Defaults to 0.01.
+    critic_std (float, optional): Initialization scale for critic output layers. Defaults to 1.0.
+    hidden_std (float, optional): Initialization scale for hidden layers. Defaults to √2.
+    bias_const (float, optional): Constant value to initialize network biases with. Defaults to 0.0.
+    """
+    def __init__(
+                self,
+                state_dim:int, 
+                action_dim:int,
+                hidden_size:int=64,
+                actor:nn.Module = None,
+                continuous:bool=False,
+                actor_std:float=0.01,
+                init_weights:bool= True,
+                critic_std:float=1.0,
+                hidden_std:float = np.sqrt(2),
+                bias_const:float=0.0,
+                ):
         super().__init__()
 
         self.continuous = continuous
 
         if self.continuous:
+        # For continuous actions, create a learnable log-standard-deviation vector.
+        # This defines the standard deviation (σ) of the Gaussian policy.
+        # The actor outputs the mean μ, and together μ + σ·N(0,1) defines the action distribution.
+        # Defined as log(σ) because exp(log(sigma)) > 0 , and is numerically stable.
             self.log_std = nn.Parameter(torch.zeros(action_dim))
 
         if actor is None:
@@ -33,51 +122,168 @@ class ActorCritic(nn.Module):
             nn.Tanh(),
             nn.Linear(hidden_size, 1)
         )
+        if init_weights:
+            self._init_weights(
+                                actor_std = actor_std,
+                                critic_std= critic_std,
+                                hidden_std=hidden_std,
+                                bias_const = bias_const,
+                                )
 
-        # Initialize weights
-        self._init_weights()
+    def _init_weights(
+                    self, 
+                    actor_std:float=0.01,
+                    critic_std:float=1.0,
+                    hidden_std:float = np.sqrt(2),
+                    bias_const:float=0.0
+                    ):
+        """
+        Initialize network weights. Proper initialization helps PPO start with reasonable value estimates
+        and stable action distributions (preserves signal variance across layers).
+        Applies orthogonal initialization to all linear layers.
+        Steps:
+        1. Initialize A: a_ij ~ N(0, 1)
+        2. QR decomposition (https://en.wikipedia.org/wiki/QR_decomposition):
+            A = Q R
+            Q: Orthogonal matrix (Q Q^T = I)
+            R: Upper triangular matrix
+        3. Set the layer weights (W) = Q * σ
+        This approximately achieves w_ij ~ N(0, σ^2) (Gaussian distribution) and W W^T = I (orthogonality)
 
-    def _init_weights(self, actor_std=0.01, critic_std=1.0, bias_const=0.0):
-        """Applies orthogonal initialization to all linear layers."""
+        For the hidden layers, σ defaults to √2 because, according to He et alia 2015 (https://arxiv.org/pdf/1502.01852), 
+        ReLU halves the variance, so to mitigate that we set σ^2 = 2.
+        CleanRL uses √2 in spite of using tanh (which does not half the variance) 
+        as the activation function; thus, so does this implementation.
+
+        Args:
+
+        actor_std (float, optional): Standard deviation for continuous actor distribution. Defaults to 0.01.
+        critic_std (float, optional): Initialization scale for critic output layers. Defaults to 1.0.
+        hidden_std (float, optional): Initialization scale for hidden layers. Defaults to √2.
+        bias_const (float, optional): Constant value to initialize network biases with. Defaults to 0.0.
+        """
 
         actor_linear_layers = [layer for layer in self.actor.modules() if isinstance(layer, nn.Linear)]
         # Actor layers
         for i, layer in enumerate(actor_linear_layers):
             if isinstance(layer, nn.Linear):
-                std = actor_std if i == len(actor_linear_layers)-1 else np.sqrt(2)
+                std = actor_std if i == len(actor_linear_layers)-1 else hidden_std
                 nn.init.orthogonal_(layer.weight, gain=std)
                 nn.init.constant_(layer.bias, bias_const)
 
         # Critic layers
         for i, layer in enumerate(self.critic):
             if isinstance(layer, nn.Linear):
-                std = critic_std if i == len(self.critic)-1 else np.sqrt(2)
+                std = critic_std if i == len(self.critic)-1 else hidden_std
                 nn.init.orthogonal_(layer.weight, gain=std)
                 nn.init.constant_(layer.bias, bias_const)
     
-    def forward(self,x):
+    def forward(self,obs:torch.tensor):
 
-        value = self.critic(x)
+        """
+        Forward pass of the ActorCritic policy.
 
-        action_dist  = self.actor(x)
+        Computes:
+        - The actor: action distribution from the observation.
+        - The critic: value estimate of the current state.
+
+        Args:
+            obs (torch.Tensor): Observation input.
+        """
+        # Calculate the value
+        value = self.critic(obs)
+        # Calculate actions
+        actor_out  = self.actor(obs)
 
         if self.continuous:
+            # Get σ from the log(σ), clamp it for stability.
             std = torch.exp(self.log_std).clamp(1e-6, 2.0)
-            action_dist = D.Independent(D.Normal(action_dist, std), 1)
+
+            # The output of the actor network are numbers which represent the means (μ) of the Normal distribution. 
+            # The final action a is a number sampled from that distribution.
+            # D.Normal(actor_out, std) creates a normal distribution for each element such that
+            # the mean is actor_out and σ is std.
+            # D.Independent is a PyTorch wrapper that basically makes the distribution output a single number 
+            # when using action_dist.log_prob(action). This is needed for the ratio in the loss:
+            # ratio = π_θ(a | s) / π_θ_old(a | s). a is a vector; each element is independent, corresponding
+            # to π_θ(a | s) = π_θ(a_1 | s) * π_θ(a_2 | s) * ... * π_θ(a_n | s). Note that the prior here is implied.
+            # π_θ is action_dist.
+            # In the log case, it will be Σ log(π_θ(a_i | s)).
+
+            action_dist = D.Independent(D.Normal(actor_out, std), 1)
         else:
-            action_dist = D.Categorical(logits=action_dist)
+
+            # In the discrete case, the output needs to be converted to logits.
+            # Thus, log softmax is used. Log softmax is preferred because it is more numerically stable
+            # (avoiding overflow when logits are large in magnitude) than softmax.
+            # softmax(x_i)      = exp(x_i) / Σ_j exp(x_j)
+            # log_softmax(x_i)  = x_i - log(Σ_j exp(x_j))
+            # Categorical(logits=...) internally uses log_softmax, so we do not need
+            # to apply softmax ourselves. Also, as mentioned before, the ratio in the loss only
+            # needs the log probabilities.
+            action_dist = D.Categorical(logits=actor_out)
 
         return action_dist, value
 
 
 class ClipSurrogatedObjectiveLoss(nn.Module):
+
+    """
+    The Clipped Surrogate Objective Loss is the main workhorse of PPO; it ensures that the current policy
+    does not deviate too much from the old policy.
+
+    [The probability ratio, r_θ]
+
+    The probability ratio compares the probability of taking a certain action under the new policy versus
+    the old policy:
+
+        r_θ = π_θ(a | s) / π_θ_old(a | s)
+
+    ---
+
+    First, clip the probability ratio to make the policy updates more numerically stable:
+
+        r_θ_clipped = clip(r_θ, 1 - ε, 1 + ε)
+
+    Next, calculate the surrogate objective loss:
+
+        L_CLIP = 𝔼[r_θ_clipped * (-A)] = -mean(r_θ_clipped * A)
+
+
+    Where: 
+    A : The advantage function. It is multiplied because we want to encourage
+        increased expected accumulated reward (A > 0). The negative sign is included
+        because this is a loss function that is minimized.
+
+    ε : The clipping threshold.
+
+    Args:
+
+    eps (float): The clipping threshold , ε.
+    """
     
-    def __init__(self, eps, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(
+                self, 
+                eps:float,
+                ):
+        super().__init__()
 
         self.eps = eps
         
     def forward(self, ratio, adv):
+        """
+        Calculate the Clipped Surrogate Objective Loss.
+
+        Args:
+
+        ratio (torch.tensor): The ratio tensor between the old policy and the new one. 
+                              Shape: (num_envs * num_steps//num_minibatches,)
+                              ratio = π_θ(a | s) / π_θ_old(a | s)
+        
+        adv (torch.tensor): The advantage tensor. Shape: (num_envs * num_steps//num_minibatches,)
+
+        Note: num_steps//num_minibatches = number of steps per rollout.
+        """
 
         return -1.0*torch.min(
             ratio*adv,
@@ -85,26 +291,67 @@ class ClipSurrogatedObjectiveLoss(nn.Module):
         ).mean()
 
 class ValueFunctionLoss(nn.Module):
+    """
+    The Value Function Loss in PPO is the loss term regarding the critic; it ensures that the critic
+    is performing its job correctly evaluating the value of the current state. It is defined as the mean squared error
+    between the calculated value, V, and the accumulated discounted rewards, Rt which represent
+    the true value of the state. 
 
-    def __init__(self, coeff, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    L_VALUE = -0.5 *  mean((V - Rt)^2) * coeff
+
+    args:
+    coeff (float): The multiplier for the value loss in the PPO loss.
+    """
+    def __init__(
+                self, 
+                coeff:float,
+                ):
+        super().__init__()
         self.coeff = coeff
 
     def forward(self,Rt,V):
+
+        """
+        Calculate the Value Function Loss.
+        
+        Args:
+        Rt (torch.tensor): The accumlated discounted reward tensor. 
+                           Shape: (num_envs * num_steps//num_minibatches,)
+        V  (torch.tensor): The value function output from the critic.
+                           Shape: (num_envs * num_steps//num_minibatches,)
+
+        Note: num_steps//num_minibatches = number of steps per rollout.
+        """
 
         return self.coeff * 0.5 * torch.pow(V - Rt,2).mean()
 
 class EntropyBonus(nn.Module):
 
-    def __init__(self, coeff, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    """
+    The Entropy Bonus in PPO encourages exploration by increasing the randomness of the action distribution. 
+    Higher entropy means the policy is less certain and explores more.
+    This term is added to the loss function, thus multiplied by a negative sign,
+    higher entropy reduces the loss, thereby encouraging exploration
+
+    H = -Σp(x)ln(p(x))
+    
+    From torch's source code:
+    entropy = 0.5 + 0.5 * math.log(2 * math.pi) + torch.log(action_dist.scale)
+    loss = -self.coeff* entropy
+
+    Args:
+    coeff (float): The multiplier for the entropy bonus in the PPO loss.
+    """
+
+    def __init__(self, coeff):
+        super().__init__()
         self.coeff = coeff
 
     def forward(self,action_dist):
 
         return -self.coeff * action_dist.entropy().mean()
 
-
+        
 class PPOLoss(nn.Module):
 
     def __init__(self, eps, value_c,entropy_c, kl_coeff, *args, **kwargs):
@@ -163,7 +410,6 @@ class GeneralizedAdvantageEstimation(nn.Module):
             last_gae = advantages[t]
     
 
-
         returns = advantages + values[:-1]
 
         if norm:
@@ -200,7 +446,7 @@ class PPOTrainer:
         self.obs_space = env.observation_space
         self.action_space = env.action_space
 
-        self.device = policy.actor[0].weight.device
+        self.device = next(policy.parameters()).device
 
         self.gamma = gamma
         self.gae_lambda = gae_lambda
@@ -321,10 +567,12 @@ class PPOTrainer:
         advantages_flat = advantages.reshape(batch_size)
         returns_flat = returns.reshape(batch_size, -1)
 
-        for start in range(0, batch_size, minibatch_size):
+        for minibatch in range(self.num_minibatches):
 
+            start = minibatch * minibatch_size
+            end = min(start + minibatch_size, batch_size) ## avoid integer div edge case
             # Get minibatch
-            mb_inds = indices[start:start+minibatch_size]
+            mb_inds = indices[start:end]
 
             # select minibatch 
             mb_obs = obs_flat[mb_inds].to(self.device)
@@ -376,7 +624,7 @@ class PPO:
         self,
         env,
         device = "cpu",
-        actor = None,
+        actor:nn.Module = None,
         hidden_size=64,
         num_steps=2048,
         gamma=0.99,
@@ -392,6 +640,12 @@ class PPO:
         target_kl=None,
         learning_rate=2.5e-4,
         anneal_lr=True,
+        continuous:bool=False,
+        actor_std:float=0.01,
+        init_weights:bool= True,
+        critic_std:float=1.0,
+        hidden_std:float = np.sqrt(2),
+        bias_const:float=0.0,
     ):
         
         self.env = env
@@ -412,12 +666,18 @@ class PPO:
         action_dim = int(action_dim)
 
         self.policy = ActorCritic(
-            actor=actor,
-            state_dim=obs_dim,
-            action_dim=action_dim,
-            hidden_size=hidden_size,
-            continuous=continuous
-        ).to(self.device)
+                                    actor=actor,
+                                    state_dim=obs_dim,
+                                    action_dim=action_dim,
+                                    hidden_size=hidden_size,
+                                    continuous=continuous,
+                                    init_weights=init_weights,
+                                    actor_std=actor_std,
+                                    bias_const=bias_const,
+                                    critic_std=critic_std,
+                                    hidden_std=hidden_std,
+
+                                    ).to(self.device)
 
         self.trainer = PPOTrainer(
             policy=self.policy,
