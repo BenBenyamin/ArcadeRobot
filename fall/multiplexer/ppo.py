@@ -299,7 +299,7 @@ class ValueFunctionLoss(nn.Module):
 
     L_VALUE = -0.5 *  mean((V - Rt)^2) * coeff
 
-    args:
+    Args:
     coeff (float): The multiplier for the value loss in the PPO loss.
     """
     def __init__(
@@ -333,14 +333,14 @@ class EntropyBonus(nn.Module):
     This term is added to the loss function, thus multiplied by a negative sign,
     higher entropy reduces the loss, thereby encouraging exploration
 
-    H = -Σp(x)ln(p(x))
-    
+    H = -Σp(x)ln(p(x)) (source : https://en.wikipedia.org/wiki/Entropy_(information_theory)#Definition)
+
     From torch's source code:
     entropy = 0.5 + 0.5 * math.log(2 * math.pi) + torch.log(action_dist.scale)
     loss = -self.coeff* entropy
 
     Args:
-    coeff (float): The multiplier for the entropy bonus in the PPO loss.
+    coeff (float): Multiplier for the entropy bonus term in the PPO loss.
     """
 
     def __init__(self, coeff):
@@ -348,6 +348,12 @@ class EntropyBonus(nn.Module):
         self.coeff = coeff
 
     def forward(self,action_dist):
+        """
+        Calculate the Entropy Bonus.
+
+        Args:
+        action_dist (torch.distributions.Distribution): The action distribution output from the actor.
+        """
 
         return -self.coeff * action_dist.entropy().mean()
 
