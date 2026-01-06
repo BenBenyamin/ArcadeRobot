@@ -4,9 +4,8 @@ import cv2
 import gymnasium as gym
 import numpy as np
 import ale_py
-from typing import Dict, Optional, Tuple,Union
+from typing import  Optional
 import sys
-from stable_baselines3.common.env_util import make_atari_env
 
 
 # ---- Register ALE envs (needed in some setups) ----

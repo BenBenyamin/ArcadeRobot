@@ -3,23 +3,23 @@ import gymnasium as gym
 from stable_baselines3 import PPO , DQN ,A2C, SAC
 from sb3_contrib import RecurrentPPO  ,QRDQN, TRPO,MaskablePPO
 
-from inertia_warpper import  PongDelayInertiaWrapper , ActionSubsetWrapper,ActionPenalty,PongDelayStochasticInertiaWrapper
+from inertia_warpper import  ActionSubsetWrapper,PongDelayStochasticInertiaWrapper
 from inertia_warpper import make_wrapper_chain
 
 from stable_baselines3.common.atari_wrappers import AtariWrapper
 
-from stable_baselines3.common.env_util import make_atari_env , make_vec_env
+from stable_baselines3.common.env_util import  make_vec_env
 from stable_baselines3.common.vec_env import SubprocVecEnv
-from stable_baselines3.common.callbacks import CallbackList, CheckpointCallback
+from stable_baselines3.common.callbacks import CheckpointCallback
 
-from utils import ALE_ACTION_MAP ,REV_ACTION_MAP
+from utils import ALE_ACTION_MAP
 import os
 
 import ale_py
 gym.register_envs(ale_py)
 
 
-POLICY = SAC
+POLICY = PPO
 
 ENV_NAME = "PongNoFrameskip-v4"
 TOTAL_TIMESTEPS = int(500e6)

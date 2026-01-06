@@ -22,7 +22,7 @@ import ale_py
 gym.register_envs(ale_py)
 
 
-POLICY =  QRDQN
+POLICY =  PPO
 
 
 yaml_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),"rlzoo_config",f"{POLICY.__name__.lower()}.yml")

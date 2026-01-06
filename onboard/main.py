@@ -13,7 +13,7 @@ action_remapping = {
 game_env = GameEnv(fps=30, scale=4 ,seed= 5)
 controller = StretchControl(
                             algorithm= PPO,
-                            model_path="PPO_stochastic_268160000_steps",
+                            model_path="PPO_stochastic_WORKING-11-11-25",
                             action_remapping=action_remapping,
                             )
 
