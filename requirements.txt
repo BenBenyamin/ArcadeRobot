@@ -1,0 +1,11 @@
+# Target Python: 3.12
+
+gymnasium==1.2.2
+ale-py==0.11.2
+
+numpy==2.3.4
+PyYAML==6.0.3
+opencv-python==4.12.0.88
+
+stable-baselines3==2.7.0
+sb3-contrib==2.7.0

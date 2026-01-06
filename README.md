@@ -1,6 +1,5 @@
 # Robot Arm Plays an Arcade Game
 
-> **Work in Progress**
 
 [![Watch the video](https://img.youtube.com/vi/FJ-UCm9jRK4/maxresdefault.jpg)](https://www.youtube.com/watch?v=FJ-UCm9jRK4)
 
@@ -9,67 +8,149 @@ This repository contains the spring‑quarter achievements exploring how a robot
 
 The core idea is to investigate algorithms that handle delayed feedback and sparse rewards in a physical setup. A custom interface delays state/action observations. The agent is trained end‑to‑end despite observation/action latency.
 The robot used is the [Stretch3 from Hello Robotic](https://hello-robot.com/stretch-3-product).
+For more details, check out the writeup [here](https://benbenyamin.github.io/ArcadeBot/). You could also check the [`/dev` branch](https://github.com/BenBenyamin/ArcadeRobot/tree/dev), which has the whole story.
 
-## Outcomes & Deliverables
-- A set of Jupyter notebooks demonstrating **CNN‑based RL**, **computer‑vision control**, and a **VAE** for state representation.  
-- Latency‑logging and analysis scripts.  
-- A robot control script to validate real‑world performance under induced delays.  
-- A written spring report (`spring-report/report.md`) summarizing results and insights.
+**Note**: This project uses Python 3.12.
 
-## Prerequisites & Installation
-1. **Python** ≥ 3.8  
-2. Clone the repo:
-   ```bash
-   git clone git@github.com:BenBenyamin/ArcadeRobot.git
-   cd ArcadeRobot
-   ```
-3. Install dependencies:
-   ```bash
-   pip install torch torchvision gymnasium stable-baselines3 opencv-python matplotlib pandas jupyterlab ale_py
-   ```
+## Training the Agent
 
-## How to Run
-1. **Jupyter Notebooks**  
+All training code lives under the `train/` directory and is designed to run locally.
 
-   - `agent/CNN-approach/pong.ipynb` & `pong-wrapped.ipynb` — CNN‑based RL experiments  
-   - `agent/cv-approach/cv-approach.ipynb` — OpenCV control baseline  
-   - `agent/VAE/train_on_dataset.ipynb` — VAE training & visualization  
+### Create a Virtual Environment
 
-2. **Latency Logging & Plotting**  
-   ```bash
-   python utils/plot-latency.py
-   ```
+```bash
+python -m venv .venv
+source .venv/bin/activate
+```
 
-3. **Robot Validation Script (Run on the Strech Robot)**  
-   ```bash
-   python robot/check_lat_com.py
-   ```
-   See `logs/latency_log_*.csv` for an output example.
+### Install Dependencies
+
+Install PyTorch (CUDA 12.4 build), then the remaining requirements:
+
+```bash
+pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 \
+    --index-url https://download.pytorch.org/whl/cu124
+
+pip install -r requirements.txt
+```
+---
+
+### Train
+
+To train using the custom inertia and latency wrappers:
+
+```bash
+cd train
+python train.py
+```
+
+This script:
+
+* Creates Atari environments via **Gymnasium + ALE**
+* Applies custom wrappers from `inertia_warpper.py`
+* Supports PPO, A2C, DQN, SAC, QRDQN, TRPO, and RecurrentPPO
+* Logs latency and training artifacts to `logs/`
+
+---
+
+### Train Using RLZoo Config Files (Optional)
+
+You can also train using **RL Zoo–style YAML configs** located in `train/rlzoo_config/`.
+
+Example:
+
+```bash
+cd train
+python train_rlzoo.py
+```
+
+Available configs:
+
+* `a2c.yml`
+* `dqn.yml`
+* `ppo.yml`
+* `qrdqn.yml`
+* `recurrentppo.yml`
+
+This mode is useful for:
+
+* Rapid hyperparameter sweeps
+* Reproducing standardized SB3 experiments
+* Comparing against baseline RL Zoo settings
+
+---
+
+## Onboard
+
+The onboard code is intended to run on the robot (does not include training logic).
+
+### Copy Code to the Robot
+
+For example you can use:
+
+```bash
+scp -r onboard user@robot:/path/to/project/
+```
+
+---
+
+### Create a Virtual Environment (On Robot)
+
+On the robot:
+
+```bash
+cd onboard
+python -m venv .venv
+source .venv/bin/activate
+```
+
+### Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+### Source and Run
+
+```bash
+source .venv/bin/activate
+python main.py
+```
+
+`main.py`:
+
+* Loads a trained PPO policy (`.zip`)
+* Handles real-time control
+* Applies action mapping and latency compensation
+* Uses icons from `onboard/ICONS/` for UI feedback
+
+---
 
 ## Project Structure
 
-```plaintext
-├── agent                   # All agent development code and experiments
-│   ├── CNN-approach        # PPO/CNN notebooks for Pong under delay
-│   │   ├── pong.ipynb      # Raw environment CNN-based RL notebook
-│   │   ├── pong-wrapped.ipynb  # Wrapped environment CNN-based RL notebook
-│   │   └── wrapper         # Custom Gym wrappers for delay and observation transforms
-│   ├── cv-approach         # OpenCV-based control proof-of-concept
-│   │   ├── cv-approach.ipynb  # Notebook applying CV to detect paddle and ball
-│   │   └── cv.py           # Script encapsulating CV frame processing logic
-│   └── VAE                 # Variational Autoencoder for state representation
-│       ├── loss.py         # VAE loss functions
-│       ├── train_on_dataset.ipynb  # VAE *offline* training pipeline notebook
-│       ├── vae.py          # VAE model implementation
-│       └── vae-train.ipynb # VAE *online* training training pipeline notebook
-├── logs                    # Latency measurement CSV logs
-│   └── latency_log_1748472382.csv  # Example latency log file
-├── robot                   # Robot arm communication and validation scripts
-│   └── check_lat_com.py    # Tests round-trip communication latency
-├── spring-report           # Spring report and associated figures
-│   ├── figures             # Generated plots and demo video (see spring-report/repord.md for more context)
-│   └── report.md           # Written summary of methodology, results, insights for the spring quarter
-└── utils                   # Utility scripts for analysis and plotting
-    └── plot-latency.py     # Parses CSV logs and generates latency plots
+```text
+.
+├── logs/                      # Training logs and latency traces
+│   └── latency_log_*.csv
+│
+├── onboard/                   # Code deployed to the robot
+│   ├── control.py             # Low-level control logic
+│   ├── game.py                # Environment / interaction loop
+│   ├── main.py                # Entry point (run this onboard)
+│   ├── ICONS/                 # UI icons for actions
+│   ├── PPO_stochastic_*.zip   # Trained policy
+│   └── requirements.txt       # Minimal onboard dependencies
+│
+├── train/                     # Training code (local)
+│   ├── inertia_warpper.py     # Custom inertia & delay wrappers
+│   ├── latency_sampler.py     # Latency modeling
+│   ├── train.py               # Main training script
+│   ├── train_rlzoo.py         # RL Zoo–style training
+│   ├── utils.py               # Action maps & helpers
+│   └── rlzoo_config/          # YAML configs for algorithms
+│
+├── requirements.txt           # Full training dependencies
+└── README.md
 ```
-

@@ -9,10 +9,10 @@ from stable_baselines3.common.atari_wrappers import AtariWrapper
 
 from stable_baselines3.common.utils import LinearSchedule
 
-from stable_baselines3.common.env_util import make_atari_env , make_vec_env
-from stable_baselines3.common.vec_env import SubprocVecEnv, VecFrameStack
+from stable_baselines3.common.env_util import  make_vec_env
+from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.vec_env.stacked_observations import StackedObservations
-from stable_baselines3.common.callbacks import CallbackList, CheckpointCallback
+from stable_baselines3.common.callbacks import CheckpointCallback
 import yaml
 from utils import ALE_ACTION_MAP ,REV_ACTION_MAP
 import os
@@ -49,12 +49,9 @@ except: pass
 ENV_NAME = "PongNoFrameskip-v4"
 TOTAL_TIMESTEPS = int(500e6)
 N_ENVS = config.pop("n_envs", 16)
-FRAME_STACK =   config.pop("frame_stack",4)
 PENALTY = 0.02
-REW_MUL = 0.0
-CHECKPOINT_NAME = os.path.expanduser(f"~/EXT_DATA/Pong-checkpoints/QRDQN_stochastic_466000000_steps")
 
-MODEL_NAME = f"{POLICY.__name__}_S{FRAME_STACK}_P+{PENALTY}_M{REW_MUL}"
+MODEL_NAME = f"{POLICY.__name__}_P+{PENALTY}"
 
 
 if __name__ == "__main__":
@@ -77,21 +74,13 @@ if __name__ == "__main__":
   
   print(env.reset()[0].shape)
 
-  # model = POLICY(
-  #               env=env, 
-  #               verbose=1 , 
-  #               device="cuda:0", # cuda:0 , cuda:1
-  #               tensorboard_log="./PONG_tensorboard/", 
-  #               **config,
-  #               )
-  model = POLICY.load(
-     CHECKPOINT_NAME,
-     device= "cpu",
-     env = env,
-  )
-
-
-
+  model = POLICY(
+                env=env, 
+                verbose=1 , 
+                device="cuda:0", # cuda:0 , cuda:1
+                tensorboard_log="./PONG_tensorboard/", 
+                **config,
+                )
 
   checkpoint_callback = CheckpointCallback(
     save_freq=10_000,
@@ -103,7 +92,7 @@ if __name__ == "__main__":
 
   model.learn(
               TOTAL_TIMESTEPS, 
-              tb_log_name= "QRDQN_stochastic",
+              tb_log_name= "PPO_stochastic",
               callback= checkpoint_callback,
               reset_num_timesteps=False,
               )
