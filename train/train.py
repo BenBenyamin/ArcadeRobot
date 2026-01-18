@@ -35,7 +35,7 @@ if __name__ == "__main__":
   lat_file = os.path.join(os.path.dirname(os.path.abspath(__file__)),"latencies.pkl")
 
   wrap = make_wrapper_chain([
-    (PongDelayStochasticInertiaWrapper,{"delay_steps": DELAY,"target_fps":30,"lat_pickle_filename":lat_file}),
+    (PongDelayStochasticInertiaWrapper,{"target_fps":30,"lat_pickle_filename":lat_file}),
     (AtariWrapper, {}),
     (ActionSubsetWrapper, {"allowed_actions": 
                           [k for k, v in ALE_ACTION_MAP.items() if v in {"NO-OP", "RIGHT", "LEFT"}]}),
